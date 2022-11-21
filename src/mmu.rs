@@ -83,7 +83,7 @@ impl MMU {
             WORKING_RAM_START..=WORKING_RAM_END => self.working_ram[address - WORKING_RAM_START],
             ZERO_PAGE_START..=ZERO_PAGE_END => self.zero_page_ram[address - ZERO_PAGE_START],
             _ => {
-                panic!("Failed to read memory at 0x{:x}", address);
+                panic!("Failed to read memory at 0x{:02x}", address);
             }
         }
     }
@@ -111,7 +111,7 @@ impl MMU {
                 self.zero_page_ram[address - ZERO_PAGE_START] = value
             }
             _ => {
-                panic!("Failed to write memory at 0x{:x}", address);
+                panic!("Failed to write memory at 0x{:02x}", address);
             }
         }
     }
