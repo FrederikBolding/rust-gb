@@ -1,4 +1,6 @@
-use crate::instruction::{is_word_target, Instruction, InstructionTarget, LoadType};
+use crate::instruction::{
+    is_word_target, Indirect, Instruction, InstructionTarget, JumpTest, LoadType,
+};
 use crate::mmu::MMU;
 use crate::registers::{RegisterTarget, Registers, WordRegisterTarget};
 
@@ -23,15 +25,15 @@ impl CPU {
         }
     }
 
-    fn read_current_byte(&self) -> u8 {
+    fn read_current_byte(&mut self) -> u8 {
         self.mmu.read(self.program_counter)
     }
 
-    fn read_next_byte(&self) -> u8 {
+    fn read_next_byte(&mut self) -> u8 {
         self.mmu.read(self.program_counter + 1)
     }
 
-    fn read_next_word(&self) -> u16 {
+    fn read_next_word(&mut self) -> u16 {
         // Treat next byte as least significant bits and next byte + 1 as most significant
         let msb = (self.mmu.read(self.program_counter + 2) as u16) << 8;
         let lsb = self.read_next_byte() as u16;
@@ -49,13 +51,8 @@ impl CPU {
         println!("Byte: 0x{:02x}", instruction_byte);
         let instruction = Instruction::from_byte(instruction_byte, is_prefixed).unwrap();
         println!("Instruction {:?}", instruction);
-        self.execute(instruction);
-        // TODO: Change this to be dependant on instruction executed
-        if is_prefixed {
-            self.program_counter += 2;
-        } else {
-            self.program_counter += 1;
-        }
+        let next_program_counter = self.execute(instruction);
+        self.program_counter = next_program_counter;
     }
 
     fn get_instruction_target_byte(&mut self, target: InstructionTarget) -> u8 {
@@ -129,22 +126,31 @@ impl CPU {
         msb | lsb
     }
 
-    fn execute(&mut self, instruction: Instruction) {
+    fn execute(&mut self, instruction: Instruction) -> u16 {
         match instruction {
             Instruction::NOP => {
                 // no-op
+                self.program_counter.wrapping_add(1)
             }
             Instruction::ADD(target) => {
                 let value1 = self.get_instruction_target_byte(target);
                 let value2 = self.registers.get(RegisterTarget::A);
                 let value = value1.wrapping_add(value2);
                 self.registers.set(RegisterTarget::A, value);
+                match target {
+                    InstructionTarget::D8 => self.program_counter.wrapping_add(2),
+                    _ => self.program_counter.wrapping_add(1),
+                }
             }
             Instruction::SUB(target) => {
                 let value1 = self.get_instruction_target_byte(target);
                 let value2 = self.registers.get(RegisterTarget::A);
                 let value = value1.wrapping_sub(value2);
                 self.registers.set(RegisterTarget::A, value);
+                match target {
+                    InstructionTarget::D8 => self.program_counter.wrapping_add(2),
+                    _ => self.program_counter.wrapping_add(1),
+                }
             }
             Instruction::INC(target) => {
                 if is_word_target(target) {
@@ -156,6 +162,7 @@ impl CPU {
                     let value = current_value.wrapping_add(1);
                     self.set_instruction_target_byte(target, value);
                 }
+                self.program_counter.wrapping_add(1)
             }
             Instruction::DEC(target) => {
                 if is_word_target(target) {
@@ -167,18 +174,101 @@ impl CPU {
                     let value = current_value.wrapping_sub(1);
                     self.set_instruction_target_byte(target, value);
                 }
+                self.program_counter.wrapping_add(1)
             }
             Instruction::LD(load_type) => match load_type {
                 LoadType::Byte(target, source) => {
                     let source_value = self.get_instruction_target_byte(source);
                     self.set_instruction_target_byte(target, source_value);
+                    self.program_counter.wrapping_add(1)
                 }
                 LoadType::Word(target) => {
                     let source_value = self.read_next_word();
                     self.set_instruction_target_word(target, source_value);
+                    self.program_counter.wrapping_add(2)
+                }
+                LoadType::AFromIndirect(source) => {
+                    let address = match source {
+                        Indirect::BCIndirect => {
+                            self.get_instruction_target_byte(InstructionTarget::BC) as u16
+                        }
+                        Indirect::DEIndirect => {
+                            self.get_instruction_target_byte(InstructionTarget::DE) as u16
+                        }
+                        Indirect::HLIndirectMinus => todo!(),
+                        Indirect::HLIndirectPlus => todo!(),
+                        Indirect::WordIndirect => self.read_next_word(),
+                        Indirect::LastByteIndirect => {
+                            let offset = self.get_instruction_target_byte(InstructionTarget::C);
+                            0xFF00 + offset as u16
+                        }
+                    };
+                    let source_value = self.mmu.read(address);
+                    self.set_instruction_target_byte(InstructionTarget::A, source_value);
+                    match source {
+                        Indirect::WordIndirect => self.program_counter.wrapping_add(3),
+                        _ => self.program_counter.wrapping_add(1),
+                    }
+                }
+                LoadType::IndirectFromA(target) => {
+                    let source_value = self.get_instruction_target_byte(InstructionTarget::A);
+                    let address = match target {
+                        Indirect::BCIndirect => {
+                            self.get_instruction_target_word(InstructionTarget::BC)
+                        }
+                        Indirect::DEIndirect => {
+                            self.get_instruction_target_word(InstructionTarget::DE)
+                        }
+                        Indirect::HLIndirectMinus => {
+                            let value = self.get_instruction_target_word(InstructionTarget::HL);
+                            self.set_instruction_target_word(
+                                InstructionTarget::HL,
+                                value.wrapping_sub(1),
+                            );
+                            value
+                        }
+                        Indirect::HLIndirectPlus => {
+                            let value = self.get_instruction_target_word(InstructionTarget::HL);
+                            self.set_instruction_target_word(
+                                InstructionTarget::HL,
+                                value.wrapping_add(1),
+                            );
+                            value
+                        }
+                        Indirect::WordIndirect => self.read_next_word(),
+                        Indirect::LastByteIndirect => {
+                            let offset = self.get_instruction_target_byte(InstructionTarget::C);
+                            0xFF00 + offset as u16
+                        }
+                    };
+                    self.mmu.write(address, source_value);
+                    match target {
+                        Indirect::WordIndirect => self.program_counter.wrapping_add(3),
+                        _ => self.program_counter.wrapping_add(1),
+                    }
+                }
+                LoadType::AFromByteAddress => {
+                    let offset = self.read_next_byte();
+                    let value = self.mmu.read(0xFF00 + offset as u16);
+                    self.set_instruction_target_byte(InstructionTarget::A, value);
+                    self.program_counter.wrapping_add(2)
+                }
+                LoadType::ByteAddressFromA => {
+                    let offset = self.read_next_byte();
+                    let value = self.get_instruction_target_byte(InstructionTarget::A);
+                    self.mmu.write(0xFF00 + offset as u16, value);
+                    self.program_counter.wrapping_add(2)
                 }
                 LoadType::SPFromHL => {
                     self.stack_pointer = self.get_instruction_target_word(InstructionTarget::HL);
+                    self.program_counter.wrapping_add(1)
+                }
+                LoadType::IndirectFromSP => {
+                    let address = self.read_next_word();
+                    self.mmu.write(address, self.stack_pointer as u8);
+                    self.mmu
+                        .write(address.wrapping_add(1), (self.stack_pointer >> 8) as u8);
+                    self.program_counter.wrapping_add(3)
                 }
                 _ => {
                     panic!("Failed to load {:?}", load_type)
@@ -190,6 +280,10 @@ impl CPU {
                 let a = self.get_instruction_target_byte(InstructionTarget::A);
                 let result = value | a;
                 self.set_instruction_target_byte(InstructionTarget::A, result);
+                match target {
+                    InstructionTarget::D8 => self.program_counter.wrapping_add(2),
+                    _ => self.program_counter.wrapping_add(1),
+                }
             }
             Instruction::AND(target) => {
                 // TODO: Flags
@@ -197,6 +291,10 @@ impl CPU {
                 let a = self.get_instruction_target_byte(InstructionTarget::A);
                 let result = value & a;
                 self.set_instruction_target_byte(InstructionTarget::A, result);
+                match target {
+                    InstructionTarget::D8 => self.program_counter.wrapping_add(2),
+                    _ => self.program_counter.wrapping_add(1),
+                }
             }
             Instruction::XOR(target) => {
                 // TODO: Flags
@@ -204,26 +302,67 @@ impl CPU {
                 let a = self.get_instruction_target_byte(InstructionTarget::A);
                 let result = value ^ a;
                 self.set_instruction_target_byte(InstructionTarget::A, result);
+                match target {
+                    InstructionTarget::D8 => self.program_counter.wrapping_add(2),
+                    _ => self.program_counter.wrapping_add(1),
+                }
             }
             Instruction::SET(target, bit_position) => {
                 let value = self.get_instruction_target_byte(target);
                 // Use bitmask to set specific bit
                 let result = value | (1u8 << (bit_position as u8));
                 self.set_instruction_target_byte(target, result);
+                self.program_counter.wrapping_add(1)
             }
             Instruction::RES(target, bit_position) => {
                 let value = self.get_instruction_target_byte(target);
                 // Use bitmask to reset specific bit
                 let result = value & !(1u8 << (bit_position as u8));
                 self.set_instruction_target_byte(target, result);
+                self.program_counter.wrapping_add(1)
             }
             Instruction::PUSH(target) => {
                 let value = self.get_instruction_target_word(target);
                 self.push(value);
+                self.program_counter.wrapping_add(1)
             }
             Instruction::POP(target) => {
                 let value = self.pop();
                 self.set_instruction_target_word(target, value);
+                self.program_counter.wrapping_add(1)
+            }
+            Instruction::RST(location) => {
+                self.push(self.program_counter);
+                location.to_hex()
+            }
+            Instruction::JP(test) => {
+                let jump_condition = match test {
+                    JumpTest::NotZero => todo!(),
+                    JumpTest::NotCarry => todo!(),
+                    JumpTest::Zero => todo!(),
+                    JumpTest::Carry => todo!(),
+                    JumpTest::Always => true,
+                };
+                if jump_condition {
+                    self.read_next_word()
+                } else {
+                    self.program_counter.wrapping_add(3)
+                }
+            }
+            Instruction::JR(test) => {
+                let jump_condition = match test {
+                    JumpTest::NotZero => todo!(),
+                    JumpTest::NotCarry => todo!(),
+                    JumpTest::Zero => todo!(),
+                    JumpTest::Carry => todo!(),
+                    JumpTest::Always => true,
+                };
+                let next_program_counter = self.program_counter.wrapping_add(2);
+                if jump_condition {
+                    next_program_counter.wrapping_add(self.read_next_byte() as u16)
+                } else {
+                    next_program_counter
+                }
             }
             _ => {
                 panic!("Failed to execute {:?}", instruction);
@@ -279,21 +418,21 @@ fn test_load_byte() {
     assert_eq!(cpu.registers.b, 1);
 }
 
-    #[test]
-    fn test_push_pop() {
-        let mmu = MMU::new();
-        let mut cpu = CPU::new(mmu);
-        cpu.registers.b = 0x4;
-        cpu.registers.c = 0x89;
-        cpu.stack_pointer = 0x10;
-        cpu.execute(Instruction::PUSH(InstructionTarget::BC));
+#[test]
+fn test_push_pop() {
+    let mmu = MMU::new();
+    let mut cpu = CPU::new(mmu);
+    cpu.registers.b = 0x4;
+    cpu.registers.c = 0x89;
+    cpu.stack_pointer = 0x10;
+    cpu.execute(Instruction::PUSH(InstructionTarget::BC));
 
-        assert_eq!(cpu.mmu.read(0xF), 0x04);
-        assert_eq!(cpu.mmu.read(0xE), 0x89);
-        assert_eq!(cpu.stack_pointer, 0xE);
+    assert_eq!(cpu.mmu.read(0xF), 0x04);
+    assert_eq!(cpu.mmu.read(0xE), 0x89);
+    assert_eq!(cpu.stack_pointer, 0xE);
 
-        cpu.execute(Instruction::POP(InstructionTarget::DE));
+    cpu.execute(Instruction::POP(InstructionTarget::DE));
 
-        assert_eq!(cpu.registers.d, 0x04);
-        assert_eq!(cpu.registers.e, 0x89);
-    }
+    assert_eq!(cpu.registers.d, 0x04);
+    assert_eq!(cpu.registers.e, 0x89);
+}

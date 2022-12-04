@@ -27,7 +27,7 @@ pub enum InstructionTarget {
     DE,
     HL,
     SP,
-    AF
+    AF,
 }
 #[derive(Copy, Clone, Debug, PartialEq)]
 pub enum ADDHLTarget {

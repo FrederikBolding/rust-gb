@@ -40,6 +40,7 @@ pub const ZERO_PAGE_END: usize = 0xFFFE;
 pub const ZERO_PAGE_SIZE: usize = ZERO_PAGE_END - ZERO_PAGE_START + 1;
 
 pub struct MMU {
+    booting: bool,
     bios: [u8; BIOS_SIZE],
     rom_bank_0: [u8; ROM_BANK_0_SIZE],
     rom_bank_n: [u8; ROM_BANK_N_SIZE],
@@ -52,6 +53,7 @@ pub struct MMU {
 impl MMU {
     pub fn new() -> Self {
         Self {
+            booting: true,
             bios: [0; BIOS_SIZE],
             rom_bank_0: [0; ROM_BANK_0_SIZE],
             rom_bank_n: [0; ROM_BANK_N_SIZE],
@@ -62,13 +64,33 @@ impl MMU {
         }
     }
 
-    pub fn read(&self, address: u16) -> u8 {
+    pub fn load_bios(&mut self, bios: Vec<u8>) {
+        println!("Loading BIOS...");
+        for i in 0..BIOS_SIZE {
+            self.bios[i] = bios[i];
+        }
+    }
+
+    pub fn load_rom(&mut self, rom: Vec<u8>) {
+        println!("Loading ROM...");
+        for i in 0..ROM_BANK_0_SIZE {
+            self.rom_bank_0[i] = rom[i];
+        }
+        for i in 0..ROM_BANK_N_SIZE {
+            self.rom_bank_n[i] = rom[ROM_BANK_0_SIZE + i];
+        }
+    }
+
+    pub fn read(&mut self, address: u16) -> u8 {
         let address = address as usize;
         println!("Read 0x{:02x}", address);
         match address {
             BIOS_START..=BIOS_END => {
-                // TODO: Toggle between BIOS and ROM bank 0
-                if false {
+                if self.booting && address <= 0x00FE {
+                    // Boot has finished when we read from this address
+                    if address == 0x00FE {
+                        self.booting = false;
+                    }
                     self.bios[address]
                 } else {
                     self.rom_bank_0[address]
