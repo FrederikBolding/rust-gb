@@ -172,6 +172,18 @@ impl CPU {
                 let result = value ^ a;
                 self.set_instruction_target_byte(InstructionTarget::A, result);
             }
+            Instruction::SET(target, bit_position) => {
+                let value = self.get_instruction_target_byte(target);
+                // Use bitmask to set specific bit
+                let result = value | (1u8 << (bit_position as u8));
+                self.set_instruction_target_byte(target, result);
+            }
+            Instruction::RES(target, bit_position) => {
+                let value = self.get_instruction_target_byte(target);
+                // Use bitmask to reset specific bit
+                let result = value & !(1u8 << (bit_position as u8));
+                self.set_instruction_target_byte(target, result);
+            }
             _ => {
                 panic!("Failed to execute {:?}", instruction);
             }
