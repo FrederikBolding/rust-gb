@@ -27,6 +27,7 @@ pub enum InstructionTarget {
     DE,
     HL,
     SP,
+    AF
 }
 #[derive(Copy, Clone, Debug, PartialEq)]
 pub enum ADDHLTarget {
@@ -46,13 +47,6 @@ pub enum JumpTest {
 }
 
 #[derive(Copy, Clone, Debug, PartialEq)]
-pub enum LoadWordTarget {
-    BC,
-    DE,
-    HL,
-    SP,
-}
-#[derive(Copy, Clone, Debug, PartialEq)]
 pub enum Indirect {
     BCIndirect,
     DEIndirect,
@@ -65,7 +59,7 @@ pub enum Indirect {
 #[derive(Copy, Clone, Debug, PartialEq)]
 pub enum LoadType {
     Byte(InstructionTarget, InstructionTarget),
-    Word(LoadWordTarget),
+    Word(InstructionTarget),
     AFromIndirect(Indirect),
     IndirectFromA(Indirect),
     AFromByteAddress,
@@ -73,14 +67,6 @@ pub enum LoadType {
     SPFromHL,
     HLFromSPN,
     IndirectFromSP,
-}
-
-#[derive(Copy, Clone, Debug, PartialEq)]
-pub enum StackTarget {
-    AF,
-    BC,
-    DE,
-    HL,
 }
 
 #[derive(Copy, Clone, Debug, PartialEq)]
@@ -185,8 +171,8 @@ pub enum Instruction {
     LD(LoadType),
 
     // Stack Instructions
-    PUSH(StackTarget),
-    POP(StackTarget),
+    PUSH(InstructionTarget),
+    POP(InstructionTarget),
     CALL(JumpTest),
     RET(JumpTest),
     RETI,
@@ -677,10 +663,10 @@ impl Instruction {
                 Indirect::WordIndirect,
             ))),
 
-            0x01 => Some(Instruction::LD(LoadType::Word(LoadWordTarget::BC))),
-            0x11 => Some(Instruction::LD(LoadType::Word(LoadWordTarget::DE))),
-            0x21 => Some(Instruction::LD(LoadType::Word(LoadWordTarget::HL))),
-            0x31 => Some(Instruction::LD(LoadType::Word(LoadWordTarget::SP))),
+            0x01 => Some(Instruction::LD(LoadType::Word(InstructionTarget::BC))),
+            0x11 => Some(Instruction::LD(LoadType::Word(InstructionTarget::DE))),
+            0x21 => Some(Instruction::LD(LoadType::Word(InstructionTarget::HL))),
+            0x31 => Some(Instruction::LD(LoadType::Word(InstructionTarget::SP))),
 
             0x40 => Some(Instruction::LD(LoadType::Byte(
                 InstructionTarget::B,
@@ -982,15 +968,15 @@ impl Instruction {
             0xf9 => Some(Instruction::LD(LoadType::SPFromHL)),
             0xf8 => Some(Instruction::LD(LoadType::HLFromSPN)),
 
-            0xc5 => Some(Instruction::PUSH(StackTarget::BC)),
-            0xd5 => Some(Instruction::PUSH(StackTarget::DE)),
-            0xe5 => Some(Instruction::PUSH(StackTarget::HL)),
-            0xf5 => Some(Instruction::PUSH(StackTarget::AF)),
+            0xc5 => Some(Instruction::PUSH(InstructionTarget::BC)),
+            0xd5 => Some(Instruction::PUSH(InstructionTarget::DE)),
+            0xe5 => Some(Instruction::PUSH(InstructionTarget::HL)),
+            0xf5 => Some(Instruction::PUSH(InstructionTarget::AF)),
 
-            0xc1 => Some(Instruction::POP(StackTarget::BC)),
-            0xd1 => Some(Instruction::POP(StackTarget::DE)),
-            0xe1 => Some(Instruction::POP(StackTarget::HL)),
-            0xf1 => Some(Instruction::POP(StackTarget::AF)),
+            0xc1 => Some(Instruction::POP(InstructionTarget::BC)),
+            0xd1 => Some(Instruction::POP(InstructionTarget::DE)),
+            0xe1 => Some(Instruction::POP(InstructionTarget::HL)),
+            0xf1 => Some(Instruction::POP(InstructionTarget::AF)),
 
             0xc4 => Some(Instruction::CALL(JumpTest::NotZero)),
             0xd4 => Some(Instruction::CALL(JumpTest::NotCarry)),

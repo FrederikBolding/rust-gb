@@ -62,7 +62,7 @@ impl MMU {
         }
     }
 
-    pub fn read(&mut self, address: u16) -> u8 {
+    pub fn read(&self, address: u16) -> u8 {
         let address = address as usize;
         println!("Read 0x{:02x}", address);
         match address {

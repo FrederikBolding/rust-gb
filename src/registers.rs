@@ -112,7 +112,6 @@ impl Registers {
                 self.set(RegisterTarget::H, (value >> 8) as u8);
                 self.set(RegisterTarget::L, (value) as u8)
             }
-            _ => todo!()
         }
     }
 }

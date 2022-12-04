@@ -23,12 +23,19 @@ impl CPU {
         }
     }
 
-    fn read_current_byte(&mut self) -> u8 {
+    fn read_current_byte(&self) -> u8 {
         self.mmu.read(self.program_counter)
     }
 
-    fn read_next_byte(&mut self) -> u8 {
+    fn read_next_byte(&self) -> u8 {
         self.mmu.read(self.program_counter + 1)
+    }
+
+    fn read_next_word(&self) -> u16 {
+        // Treat next byte as least significant bits and next byte + 1 as most significant
+        let msb = (self.mmu.read(self.program_counter + 2) as u16) << 8;
+        let lsb = self.read_next_byte() as u16;
+        msb | lsb
     }
 
     pub fn step(&mut self) {
@@ -86,6 +93,7 @@ impl CPU {
 
     fn get_instruction_target_word(&mut self, target: InstructionTarget) -> u16 {
         match target {
+            InstructionTarget::AF => self.registers.get_word(WordRegisterTarget::AF),
             InstructionTarget::BC => self.registers.get_word(WordRegisterTarget::BC),
             InstructionTarget::DE => self.registers.get_word(WordRegisterTarget::DE),
             InstructionTarget::HL => self.registers.get_word(WordRegisterTarget::HL),
@@ -99,8 +107,26 @@ impl CPU {
             InstructionTarget::BC => self.registers.set_word(WordRegisterTarget::BC, value),
             InstructionTarget::DE => self.registers.set_word(WordRegisterTarget::DE, value),
             InstructionTarget::HL => self.registers.set_word(WordRegisterTarget::HL, value),
+            InstructionTarget::SP => self.stack_pointer = value,
             _ => todo!(),
         }
+    }
+
+    fn push(&mut self, value: u16) {
+        self.stack_pointer = self.stack_pointer.wrapping_sub(1);
+        self.mmu.write(self.stack_pointer, (value >> 8) as u8);
+
+        self.stack_pointer = self.stack_pointer.wrapping_sub(1);
+        self.mmu.write(self.stack_pointer, value as u8);
+    }
+
+    fn pop(&mut self) -> u16 {
+        let lsb = self.mmu.read(self.stack_pointer) as u16;
+        self.stack_pointer = self.stack_pointer.wrapping_add(1);
+
+        let msb = (self.mmu.read(self.stack_pointer) as u16) << 8;
+        self.stack_pointer = self.stack_pointer.wrapping_add(1);
+        msb | lsb
     }
 
     fn execute(&mut self, instruction: Instruction) {
@@ -147,6 +173,13 @@ impl CPU {
                     let source_value = self.get_instruction_target_byte(source);
                     self.set_instruction_target_byte(target, source_value);
                 }
+                LoadType::Word(target) => {
+                    let source_value = self.read_next_word();
+                    self.set_instruction_target_word(target, source_value);
+                }
+                LoadType::SPFromHL => {
+                    self.stack_pointer = self.get_instruction_target_word(InstructionTarget::HL);
+                }
                 _ => {
                     panic!("Failed to load {:?}", load_type)
                 }
@@ -184,6 +217,14 @@ impl CPU {
                 let result = value & !(1u8 << (bit_position as u8));
                 self.set_instruction_target_byte(target, result);
             }
+            Instruction::PUSH(target) => {
+                let value = self.get_instruction_target_word(target);
+                self.push(value);
+            }
+            Instruction::POP(target) => {
+                let value = self.pop();
+                self.set_instruction_target_word(target, value);
+            }
             _ => {
                 panic!("Failed to execute {:?}", instruction);
             }
@@ -210,7 +251,7 @@ fn test_step() {
 }
 
 #[test]
-fn test_step_2() {
+fn test_add() {
     let mmu = MMU::new();
     let mut cpu = CPU::new(mmu);
     cpu.mmu.write(0, 0x3C); //INC A
@@ -225,10 +266,10 @@ fn test_step_2() {
 }
 
 #[test]
-fn test_step_3() {
+fn test_load_byte() {
     let mmu = MMU::new();
     let mut cpu = CPU::new(mmu);
-    cpu.mmu.write(0, 0x04); //INC B
+    cpu.mmu.write(0, 0x04); // INC B
     cpu.mmu.write(1, 0x50); // LD D, B
     for _ in 0..=1 {
         cpu.step();
@@ -237,3 +278,22 @@ fn test_step_3() {
     assert_eq!(cpu.registers.d, 1);
     assert_eq!(cpu.registers.b, 1);
 }
+
+    #[test]
+    fn test_push_pop() {
+        let mmu = MMU::new();
+        let mut cpu = CPU::new(mmu);
+        cpu.registers.b = 0x4;
+        cpu.registers.c = 0x89;
+        cpu.stack_pointer = 0x10;
+        cpu.execute(Instruction::PUSH(InstructionTarget::BC));
+
+        assert_eq!(cpu.mmu.read(0xF), 0x04);
+        assert_eq!(cpu.mmu.read(0xE), 0x89);
+        assert_eq!(cpu.stack_pointer, 0xE);
+
+        cpu.execute(Instruction::POP(InstructionTarget::DE));
+
+        assert_eq!(cpu.registers.d, 0x04);
+        assert_eq!(cpu.registers.e, 0x89);
+    }
