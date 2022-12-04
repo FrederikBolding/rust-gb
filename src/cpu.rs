@@ -1,6 +1,6 @@
-use crate::instruction::{Instruction, LoadType};
+use crate::instruction::{is_word_target, Instruction, InstructionTarget, LoadType};
 use crate::mmu::MMU;
-use crate::registers::{RegisterTarget, Registers};
+use crate::registers::{RegisterTarget, Registers, WordRegisterTarget};
 
 pub struct CPU {
     program_counter: u16,
@@ -40,10 +40,67 @@ impl CPU {
             byte
         };
         println!("Byte: 0x{:02x}", instruction_byte);
-        let instruction = Instruction::from_byte(instruction_byte, false).unwrap();
+        let instruction = Instruction::from_byte(instruction_byte, is_prefixed).unwrap();
         println!("Instruction {:?}", instruction);
         self.execute(instruction);
-        self.program_counter += 1;
+        // TODO: Change this to be dependant on instruction executed
+        if is_prefixed {
+            self.program_counter += 2;
+        } else {
+            self.program_counter += 1;
+        }
+    }
+
+    fn get_instruction_target_byte(&mut self, target: InstructionTarget) -> u8 {
+        match target {
+            InstructionTarget::A => self.registers.get(RegisterTarget::A),
+            InstructionTarget::B => self.registers.get(RegisterTarget::B),
+            InstructionTarget::C => self.registers.get(RegisterTarget::C),
+            InstructionTarget::D => self.registers.get(RegisterTarget::D),
+            InstructionTarget::E => self.registers.get(RegisterTarget::E),
+            InstructionTarget::H => self.registers.get(RegisterTarget::H),
+            InstructionTarget::L => self.registers.get(RegisterTarget::L),
+            InstructionTarget::D8 => self.read_next_byte(),
+            InstructionTarget::HLI => self
+                .mmu
+                .read(self.registers.get_word(WordRegisterTarget::HL)),
+            _ => todo!(),
+        }
+    }
+
+    fn set_instruction_target_byte(&mut self, target: InstructionTarget, value: u8) {
+        match target {
+            InstructionTarget::A => self.registers.set(RegisterTarget::A, value),
+            InstructionTarget::B => self.registers.set(RegisterTarget::B, value),
+            InstructionTarget::C => self.registers.set(RegisterTarget::C, value),
+            InstructionTarget::D => self.registers.set(RegisterTarget::D, value),
+            InstructionTarget::E => self.registers.set(RegisterTarget::E, value),
+            InstructionTarget::H => self.registers.set(RegisterTarget::H, value),
+            InstructionTarget::L => self.registers.set(RegisterTarget::L, value),
+            InstructionTarget::HLI => self
+                .mmu
+                .write(self.registers.get_word(WordRegisterTarget::HL), value),
+            _ => todo!(),
+        }
+    }
+
+    fn get_instruction_target_word(&mut self, target: InstructionTarget) -> u16 {
+        match target {
+            InstructionTarget::BC => self.registers.get_word(WordRegisterTarget::BC),
+            InstructionTarget::DE => self.registers.get_word(WordRegisterTarget::DE),
+            InstructionTarget::HL => self.registers.get_word(WordRegisterTarget::HL),
+            InstructionTarget::SP => self.stack_pointer,
+            _ => todo!(),
+        }
+    }
+
+    fn set_instruction_target_word(&mut self, target: InstructionTarget, value: u16) {
+        match target {
+            InstructionTarget::BC => self.registers.set_word(WordRegisterTarget::BC, value),
+            InstructionTarget::DE => self.registers.set_word(WordRegisterTarget::DE, value),
+            InstructionTarget::HL => self.registers.set_word(WordRegisterTarget::HL, value),
+            _ => todo!(),
+        }
     }
 
     fn execute(&mut self, instruction: Instruction) {
@@ -52,65 +109,69 @@ impl CPU {
                 // no-op
             }
             Instruction::ADD(target) => {
-                // TODO: Figure out better pattern
-                let single_register = num::FromPrimitive::from_u8(target as u8);
-                match single_register {
-                    Some(single_register) => {
-                        let register1 = self.registers.get(single_register);
-                        let register2 = self.registers.get(RegisterTarget::A);
-                        let value = register1.wrapping_add(register2);
-                        self.registers.set(RegisterTarget::A, value);
-                    }
-                    _ => {
-                        panic!("Failed to ADD");
-                    }
-                }
+                let value1 = self.get_instruction_target_byte(target);
+                let value2 = self.registers.get(RegisterTarget::A);
+                let value = value1.wrapping_add(value2);
+                self.registers.set(RegisterTarget::A, value);
             }
             Instruction::SUB(target) => {
-                let single_register = num::FromPrimitive::from_u8(target as u8);
-                match single_register {
-                    Some(single_register) => {
-                        let register1 = self.registers.get(single_register);
-                        let register2 = self.registers.get(RegisterTarget::A);
-                        let value = register1.wrapping_sub(register2);
-                        self.registers.set(RegisterTarget::A, value);
-                    }
-                    _ => {
-                        panic!("Failed to ADD");
-                    }
-                }
+                let value1 = self.get_instruction_target_byte(target);
+                let value2 = self.registers.get(RegisterTarget::A);
+                let value = value1.wrapping_sub(value2);
+                self.registers.set(RegisterTarget::A, value);
             }
             Instruction::INC(target) => {
-                let single_register = num::FromPrimitive::from_u8(target as u8);
-                match single_register {
-                    Some(single_register) => {
-                        let register = self.registers.get(single_register);
-                        let value = register.wrapping_add(1);
-                        self.registers.set(single_register, value);
-                    }
-                    _ => {
-                        panic!("Failed to INC");
-                    }
+                if is_word_target(target) {
+                    let current_value = self.get_instruction_target_word(target);
+                    let value = current_value.wrapping_add(1);
+                    self.set_instruction_target_word(target, value);
+                } else {
+                    let current_value = self.get_instruction_target_byte(target);
+                    let value = current_value.wrapping_add(1);
+                    self.set_instruction_target_byte(target, value);
                 }
             }
             Instruction::DEC(target) => {
-                let single_register = num::FromPrimitive::from_u8(target as u8);
-                match single_register {
-                    Some(single_register) => {
-                        let register = self.registers.get(single_register);
-                        let value = register.wrapping_sub(1);
-                        self.registers.set(single_register, value);
-                    }
-                    _ => {
-                        panic!("Failed to INC");
-                    }
+                if is_word_target(target) {
+                    let current_value = self.get_instruction_target_word(target);
+                    let value = current_value.wrapping_sub(1);
+                    self.set_instruction_target_word(target, value);
+                } else {
+                    let current_value = self.get_instruction_target_byte(target);
+                    let value = current_value.wrapping_sub(1);
+                    self.set_instruction_target_byte(target, value);
                 }
             }
             Instruction::LD(load_type) => match load_type {
+                LoadType::Byte(target, source) => {
+                    let source_value = self.get_instruction_target_byte(source);
+                    self.set_instruction_target_byte(target, source_value);
+                }
                 _ => {
                     panic!("Failed to load {:?}", load_type)
                 }
             },
+            Instruction::OR(target) => {
+                // TODO: Flags
+                let value = self.get_instruction_target_byte(target);
+                let a = self.get_instruction_target_byte(InstructionTarget::A);
+                let result = value | a;
+                self.set_instruction_target_byte(InstructionTarget::A, result);
+            }
+            Instruction::AND(target) => {
+                // TODO: Flags
+                let value = self.get_instruction_target_byte(target);
+                let a = self.get_instruction_target_byte(InstructionTarget::A);
+                let result = value & a;
+                self.set_instruction_target_byte(InstructionTarget::A, result);
+            }
+            Instruction::XOR(target) => {
+                // TODO: Flags
+                let value = self.get_instruction_target_byte(target);
+                let a = self.get_instruction_target_byte(InstructionTarget::A);
+                let result = value ^ a;
+                self.set_instruction_target_byte(InstructionTarget::A, result);
+            }
             _ => {
                 panic!("Failed to execute {:?}", instruction);
             }

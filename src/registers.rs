@@ -1,4 +1,4 @@
-#[derive(FromPrimitive, Copy, Clone)]
+#[derive(Copy, Clone)]
 pub enum RegisterTarget {
     A,
     B,
@@ -8,6 +8,14 @@ pub enum RegisterTarget {
     F,
     H,
     L,
+}
+
+#[derive(Copy, Clone)]
+pub enum WordRegisterTarget {
+    AF,
+    BC,
+    DE,
+    HL,
 }
 
 pub struct Registers {
@@ -48,6 +56,15 @@ impl Registers {
         }
     }
 
+    pub fn get_word(&self, register: WordRegisterTarget) -> u16 {
+        match register {
+            WordRegisterTarget::AF => (self.a as u16) << 8 | self.f as u16,
+            WordRegisterTarget::BC => (self.b as u16) << 8 | self.c as u16,
+            WordRegisterTarget::DE => (self.d as u16) << 8 | self.e as u16,
+            WordRegisterTarget::HL => (self.h as u16) << 8 | self.l as u16,
+        }
+    }
+
     pub fn set(&mut self, register: RegisterTarget, value: u8) {
         match register {
             RegisterTarget::A => {
@@ -74,6 +91,28 @@ impl Registers {
             RegisterTarget::L => {
                 self.l = value;
             }
+        }
+    }
+
+    pub fn set_word(&mut self, register: WordRegisterTarget, value: u16) {
+        match register {
+            WordRegisterTarget::AF => {
+                self.set(RegisterTarget::A, (value >> 8) as u8);
+                self.set(RegisterTarget::F, (value) as u8)
+            }
+            WordRegisterTarget::BC => {
+                self.set(RegisterTarget::B, (value >> 8) as u8);
+                self.set(RegisterTarget::C, (value) as u8)
+            }
+            WordRegisterTarget::DE => {
+                self.set(RegisterTarget::D, (value >> 8) as u8);
+                self.set(RegisterTarget::E, (value) as u8)
+            }
+            WordRegisterTarget::HL => {
+                self.set(RegisterTarget::H, (value >> 8) as u8);
+                self.set(RegisterTarget::L, (value) as u8)
+            }
+            _ => todo!()
         }
     }
 }
