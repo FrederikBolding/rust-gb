@@ -1,5 +1,5 @@
 use crate::instruction::{
-    is_word_target, Indirect, Instruction, InstructionTarget, JumpTest, LoadType,
+    is_word_target, Indirect, Instruction, InstructionTarget, JumpTest, LoadType, BitPosition
 };
 use crate::mmu::MMU;
 use crate::registers::{RegisterTarget, Registers, WordRegisterTarget};
@@ -19,7 +19,7 @@ impl CPU {
     pub fn new(mmu: MMU) -> Self {
         Self {
             program_counter: 0x0,
-            stack_pointer: 0x0,
+            stack_pointer: 0x00,
             registers: Registers::new(),
             mmu,
         }
@@ -137,6 +137,9 @@ impl CPU {
                 let value2 = self.registers.get(RegisterTarget::A);
                 let value = value1.wrapping_add(value2);
                 self.registers.set(RegisterTarget::A, value);
+                self.registers.zero = value == 0;
+                self.registers.sub = false;
+                // TODO: Half-carry
                 match target {
                     InstructionTarget::D8 => self.program_counter.wrapping_add(2),
                     _ => self.program_counter.wrapping_add(1),
@@ -147,6 +150,9 @@ impl CPU {
                 let value2 = self.registers.get(RegisterTarget::A);
                 let value = value1.wrapping_sub(value2);
                 self.registers.set(RegisterTarget::A, value);
+                self.registers.zero = value == 0;
+                self.registers.sub = true;
+                // TODO: Half-carry
                 match target {
                     InstructionTarget::D8 => self.program_counter.wrapping_add(2),
                     _ => self.program_counter.wrapping_add(1),
@@ -157,11 +163,15 @@ impl CPU {
                     let current_value = self.get_instruction_target_word(target);
                     let value = current_value.wrapping_add(1);
                     self.set_instruction_target_word(target, value);
+                    self.registers.zero = value == 0;
                 } else {
                     let current_value = self.get_instruction_target_byte(target);
                     let value = current_value.wrapping_add(1);
                     self.set_instruction_target_byte(target, value);
+                    self.registers.zero = value == 0;
                 }
+                self.registers.sub = false;
+                // TODO: Half-carry
                 self.program_counter.wrapping_add(1)
             }
             Instruction::DEC(target) => {
@@ -169,23 +179,31 @@ impl CPU {
                     let current_value = self.get_instruction_target_word(target);
                     let value = current_value.wrapping_sub(1);
                     self.set_instruction_target_word(target, value);
+                    self.registers.zero = value == 0;
                 } else {
                     let current_value = self.get_instruction_target_byte(target);
                     let value = current_value.wrapping_sub(1);
                     self.set_instruction_target_byte(target, value);
+                    self.registers.zero = value == 0;
                 }
+                self.registers.sub = true;
+                // TODO: Half-carry
                 self.program_counter.wrapping_add(1)
             }
             Instruction::LD(load_type) => match load_type {
                 LoadType::Byte(target, source) => {
                     let source_value = self.get_instruction_target_byte(source);
                     self.set_instruction_target_byte(target, source_value);
-                    self.program_counter.wrapping_add(1)
+                    match source {
+                        InstructionTarget::D8 => self.program_counter.wrapping_add(2),
+                        InstructionTarget::HLI => self.program_counter.wrapping_add(1),
+                        _ => self.program_counter.wrapping_add(1),
+                    }
                 }
                 LoadType::Word(target) => {
                     let source_value = self.read_next_word();
                     self.set_instruction_target_word(target, source_value);
-                    self.program_counter.wrapping_add(2)
+                    self.program_counter.wrapping_add(3)
                 }
                 LoadType::AFromIndirect(source) => {
                     let address = match source {
@@ -275,33 +293,42 @@ impl CPU {
                 }
             },
             Instruction::OR(target) => {
-                // TODO: Flags
                 let value = self.get_instruction_target_byte(target);
                 let a = self.get_instruction_target_byte(InstructionTarget::A);
                 let result = value | a;
                 self.set_instruction_target_byte(InstructionTarget::A, result);
+                self.registers.zero = result == 0;
+                self.registers.sub = false;
+                self.registers.half_carry = false;
+                self.registers.carry = false;
                 match target {
                     InstructionTarget::D8 => self.program_counter.wrapping_add(2),
                     _ => self.program_counter.wrapping_add(1),
                 }
             }
             Instruction::AND(target) => {
-                // TODO: Flags
                 let value = self.get_instruction_target_byte(target);
                 let a = self.get_instruction_target_byte(InstructionTarget::A);
                 let result = value & a;
                 self.set_instruction_target_byte(InstructionTarget::A, result);
+                self.registers.zero = result == 0;
+                self.registers.sub = false;
+                self.registers.half_carry = true;
+                self.registers.carry = false;
                 match target {
                     InstructionTarget::D8 => self.program_counter.wrapping_add(2),
                     _ => self.program_counter.wrapping_add(1),
                 }
             }
             Instruction::XOR(target) => {
-                // TODO: Flags
                 let value = self.get_instruction_target_byte(target);
                 let a = self.get_instruction_target_byte(InstructionTarget::A);
                 let result = value ^ a;
                 self.set_instruction_target_byte(InstructionTarget::A, result);
+                self.registers.zero = result == 0;
+                self.registers.sub = false;
+                self.registers.half_carry = false;
+                self.registers.carry = false;
                 match target {
                     InstructionTarget::D8 => self.program_counter.wrapping_add(2),
                     _ => self.program_counter.wrapping_add(1),
@@ -312,14 +339,22 @@ impl CPU {
                 // Use bitmask to set specific bit
                 let result = value | (1u8 << (bit_position as u8));
                 self.set_instruction_target_byte(target, result);
-                self.program_counter.wrapping_add(1)
+                self.program_counter.wrapping_add(2)
             }
             Instruction::RES(target, bit_position) => {
                 let value = self.get_instruction_target_byte(target);
                 // Use bitmask to reset specific bit
                 let result = value & !(1u8 << (bit_position as u8));
                 self.set_instruction_target_byte(target, result);
-                self.program_counter.wrapping_add(1)
+                self.program_counter.wrapping_add(2)
+            }
+            Instruction::BIT(target, bit_position) => {
+                let value = self.get_instruction_target_byte(target);
+                let result = (value >> (bit_position as u8)) & 0b1;
+                self.registers.zero = result == 0;
+                self.registers.sub = false;
+                self.registers.half_carry = true;
+                self.program_counter.wrapping_add(2)
             }
             Instruction::PUSH(target) => {
                 let value = self.get_instruction_target_word(target);
@@ -337,10 +372,10 @@ impl CPU {
             }
             Instruction::JP(test) => {
                 let jump_condition = match test {
-                    JumpTest::NotZero => todo!(),
-                    JumpTest::NotCarry => todo!(),
-                    JumpTest::Zero => todo!(),
-                    JumpTest::Carry => todo!(),
+                    JumpTest::NotZero => !self.registers.zero,
+                    JumpTest::NotCarry => !self.registers.carry,
+                    JumpTest::Zero => self.registers.zero,
+                    JumpTest::Carry => self.registers.carry,
                     JumpTest::Always => true,
                 };
                 if jump_condition {
@@ -351,15 +386,37 @@ impl CPU {
             }
             Instruction::JR(test) => {
                 let jump_condition = match test {
-                    JumpTest::NotZero => todo!(),
-                    JumpTest::NotCarry => todo!(),
-                    JumpTest::Zero => todo!(),
-                    JumpTest::Carry => todo!(),
+                    JumpTest::NotZero => !self.registers.zero,
+                    JumpTest::NotCarry => !self.registers.carry,
+                    JumpTest::Zero => self.registers.zero,
+                    JumpTest::Carry => self.registers.carry,
                     JumpTest::Always => true,
                 };
                 let next_program_counter = self.program_counter.wrapping_add(2);
                 if jump_condition {
-                    next_program_counter.wrapping_add(self.read_next_byte() as u16)
+                    // Handle signed offsets
+                    let offset = self.read_next_byte() as i8;
+                    return if offset >= 0 {
+                        next_program_counter.wrapping_add(offset as u16)
+                    } else {
+                        next_program_counter.wrapping_sub(offset.abs() as u16)
+                    };
+                } else {
+                    next_program_counter
+                }
+            }
+            Instruction::CALL(test) => {
+                let condition = match test {
+                    JumpTest::NotZero => !self.registers.zero,
+                    JumpTest::NotCarry => !self.registers.carry,
+                    JumpTest::Zero => self.registers.zero,
+                    JumpTest::Carry => self.registers.carry,
+                    JumpTest::Always => true,
+                };
+                let next_program_counter = self.program_counter.wrapping_add(3);
+                if condition {
+                    self.push(next_program_counter);
+                    self.read_next_word()
                 } else {
                     next_program_counter
                 }
@@ -375,6 +432,7 @@ impl CPU {
 fn test_step() {
     let mmu = MMU::new();
     let mut cpu = CPU::new(mmu);
+    cpu.mmu.skip_boot();
     cpu.mmu.write(0, 0x23); // INC(HL)
     cpu.mmu.write(1, 0xB5); // OR(L)
     cpu.mmu.write(2, 0xCB); // PREFIX
@@ -393,6 +451,7 @@ fn test_step() {
 fn test_add() {
     let mmu = MMU::new();
     let mut cpu = CPU::new(mmu);
+    cpu.mmu.skip_boot();
     cpu.mmu.write(0, 0x3C); //INC A
     cpu.mmu.write(1, 0x04); // INC B
     cpu.mmu.write(2, 0x80); // ADD A,B
@@ -408,6 +467,7 @@ fn test_add() {
 fn test_load_byte() {
     let mmu = MMU::new();
     let mut cpu = CPU::new(mmu);
+    cpu.mmu.skip_boot();
     cpu.mmu.write(0, 0x04); // INC B
     cpu.mmu.write(1, 0x50); // LD D, B
     for _ in 0..=1 {
@@ -422,6 +482,7 @@ fn test_load_byte() {
 fn test_push_pop() {
     let mmu = MMU::new();
     let mut cpu = CPU::new(mmu);
+    cpu.mmu.skip_boot();
     cpu.registers.b = 0x4;
     cpu.registers.c = 0x89;
     cpu.stack_pointer = 0x10;
@@ -435,4 +496,40 @@ fn test_push_pop() {
 
     assert_eq!(cpu.registers.d, 0x04);
     assert_eq!(cpu.registers.e, 0x89);
+}
+
+#[test]
+fn test_jr() {
+    let mmu = MMU::new();
+    let mut cpu = CPU::new(mmu);
+    cpu.mmu.skip_boot();
+    cpu.program_counter = 0xF8;
+    cpu.mmu.write(0xF9, 0x4);
+    let next_pc = cpu.execute(Instruction::JR(JumpTest::Always));
+
+    assert_eq!(next_pc, 0xFE);
+
+    cpu.mmu.write(0xF9, 0xFC); // == -4
+    let next_pc = cpu.execute(Instruction::JR(JumpTest::Always));
+    assert_eq!(next_pc, 0xF6);
+}
+
+#[test]
+fn test_bit() {
+    let mmu = MMU::new();
+    let mut cpu = CPU::new(mmu);
+    cpu.mmu.skip_boot();
+    cpu.registers.a = 0b1011_0100;
+
+    cpu.execute(Instruction::BIT(InstructionTarget::A, BitPosition::B2));
+    assert_eq!(cpu.registers.zero, false);
+    assert_eq!(cpu.registers.sub, false);
+    assert_eq!(cpu.registers.half_carry, true);
+    assert_eq!(cpu.registers.carry, false);
+
+    cpu.execute(Instruction::BIT(InstructionTarget::A, BitPosition::B1));
+    assert_eq!(cpu.registers.zero, true);
+    assert_eq!(cpu.registers.sub, false);
+    assert_eq!(cpu.registers.half_carry, true);
+    assert_eq!(cpu.registers.carry, false);
 }

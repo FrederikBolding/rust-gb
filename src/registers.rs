@@ -24,9 +24,15 @@ pub struct Registers {
     pub c: u8,
     pub d: u8,
     pub e: u8,
-    pub f: u8,
     pub h: u8,
     pub l: u8,
+
+    // FLAGS (simulating the F register)
+    pub zero: bool,
+    // Also called operation
+    pub sub: bool,
+    pub half_carry: bool,
+    pub carry: bool,
 }
 
 impl Registers {
@@ -37,9 +43,12 @@ impl Registers {
             c: 0x0,
             d: 0x0,
             e: 0x0,
-            f: 0x0,
             h: 0x0,
             l: 0x0,
+            zero: false,
+            sub: false,
+            half_carry: false,
+            carry: false,
         }
     }
 
@@ -50,7 +59,23 @@ impl Registers {
             RegisterTarget::C => self.c,
             RegisterTarget::D => self.d,
             RegisterTarget::E => self.e,
-            RegisterTarget::F => self.f,
+            RegisterTarget::F => {
+                // Construct F u8 from flags via bitwise operations
+                let mut f = 0x0u8;
+                if self.zero {
+                    f |= 0x80;
+                }
+                if self.sub {
+                    f |= 0x40;
+                }
+                if self.half_carry {
+                    f |= 0x20;
+                }
+                if self.carry {
+                    f |= 0x10;
+                }
+                f
+            }
             RegisterTarget::H => self.h,
             RegisterTarget::L => self.l,
         }
@@ -58,10 +83,18 @@ impl Registers {
 
     pub fn get_word(&self, register: WordRegisterTarget) -> u16 {
         match register {
-            WordRegisterTarget::AF => (self.a as u16) << 8 | self.f as u16,
-            WordRegisterTarget::BC => (self.b as u16) << 8 | self.c as u16,
-            WordRegisterTarget::DE => (self.d as u16) << 8 | self.e as u16,
-            WordRegisterTarget::HL => (self.h as u16) << 8 | self.l as u16,
+            WordRegisterTarget::AF => {
+                (self.get(RegisterTarget::A) as u16) << 8 | self.get(RegisterTarget::F) as u16
+            }
+            WordRegisterTarget::BC => {
+                (self.get(RegisterTarget::B) as u16) << 8 | self.get(RegisterTarget::C) as u16
+            }
+            WordRegisterTarget::DE => {
+                (self.get(RegisterTarget::D) as u16) << 8 | self.get(RegisterTarget::E) as u16
+            }
+            WordRegisterTarget::HL => {
+                (self.get(RegisterTarget::H) as u16) << 8 | self.get(RegisterTarget::L) as u16
+            }
         }
     }
 
@@ -83,7 +116,11 @@ impl Registers {
                 self.e = value;
             }
             RegisterTarget::F => {
-                self.f = value;
+                // Set flag bools based on input value bits
+                self.zero = value & 0x80 == 0x80;
+                self.sub = value & 0x40 == 0x40;
+                self.half_carry = value & 0x20 == 0x20;
+                self.carry = value & 0x10 == 0x10;
             }
             RegisterTarget::H => {
                 self.h = value;

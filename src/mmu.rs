@@ -35,6 +35,9 @@ pub const WORKING_RAM_START: usize = 0xC000;
 pub const WORKING_RAM_END: usize = 0xDFFF;
 pub const WORKING_RAM_SIZE: usize = WORKING_RAM_END - WORKING_RAM_START + 1;
 
+pub const SHADOW_WORKING_RAM_START: usize = 0xE000;
+pub const SHADOW_WORKING_RAM_END: usize = 0xFDFF;
+
 pub const ZERO_PAGE_START: usize = 0xFF80;
 pub const ZERO_PAGE_END: usize = 0xFFFE;
 pub const ZERO_PAGE_SIZE: usize = ZERO_PAGE_END - ZERO_PAGE_START + 1;
@@ -64,6 +67,10 @@ impl MMU {
         }
     }
 
+    pub fn skip_boot(&mut self) {
+        self.booting = false;
+    }
+
     pub fn load_bios(&mut self, bios: Vec<u8>) {
         println!("Loading BIOS...");
         for i in 0..BIOS_SIZE {
@@ -89,6 +96,7 @@ impl MMU {
                 if self.booting && address <= 0x00FE {
                     // Boot has finished when we read from this address
                     if address == 0x00FE {
+                        println!("Finished BIOS");
                         self.booting = false;
                     }
                     self.bios[address]
@@ -103,6 +111,8 @@ impl MMU {
                 self.external_ram[address - EXTERNAL_RAM_START]
             }
             WORKING_RAM_START..=WORKING_RAM_END => self.working_ram[address - WORKING_RAM_START],
+            // Mirrors working RAM but does not allow writing
+            SHADOW_WORKING_RAM_START..=SHADOW_WORKING_RAM_END => self.working_ram[address - SHADOW_WORKING_RAM_START],
             ZERO_PAGE_START..=ZERO_PAGE_END => self.zero_page_ram[address - ZERO_PAGE_START],
             _ => {
                 panic!("Failed to read memory at 0x{:02x}", address);
