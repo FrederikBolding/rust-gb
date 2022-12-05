@@ -6,14 +6,16 @@ mod instruction;
 mod mmu;
 mod registers;
 
-use std::fs::read;
+use std::{
+    fs::read,
+    thread::sleep,
+    time::{Duration, Instant},
+};
 
 use cpu::CPU;
+use gpu::{HEIGHT, WIDTH};
 use minifb::{Key, Window, WindowOptions};
 use mmu::MMU;
-
-const WIDTH: usize = 640;
-const HEIGHT: usize = 360;
 
 const BIOS_PATH: &str = "./static/bios/dmg_bootix.bin";
 const ROM_PATH: &str = "./static/roms/pocket.gb";
@@ -29,25 +31,35 @@ fn main() {
     let mut buffer: Vec<u32> = vec![0; WIDTH * HEIGHT];
 
     let mut window = Window::new(
-        "Test - ESC to exit",
-        WIDTH,
-        HEIGHT,
+        "rust-gb - ESC to exit",
+        WIDTH * 2,
+        HEIGHT * 2,
         WindowOptions::default(),
     )
     .unwrap_or_else(|e| {
         panic!("{}", e);
     });
 
-    // Limit to max ~60 fps update rate
-    window.limit_update_rate(Some(std::time::Duration::from_micros(16600)));
-
+    let mut now = Instant::now();
     while window.is_open() && !window.is_key_down(Key::Escape) {
-        cpu.step();
-        //for i in buffer.iter_mut() {
-        //   *i = 0; // write something more funny here!
-        //}
+        // Time elapsed since last run run of while-loop
+        let delta_nanos = now.elapsed().subsec_nanos();
+        now = Instant::now();
 
-        // We unwrap here as we want this code to exit if it fails. Real applications may want to handle this in a different way
-        //window.update_with_buffer(&buffer, WIDTH, HEIGHT).unwrap();
+        let delta_cycles = (delta_nanos as f64 / 1000000000f64) * 4190000f64;
+        let mut cycles_run = 0;
+        while cycles_run <= delta_cycles as usize {
+            cycles_run += cpu.step() as usize;
+        }
+
+        if cpu.mmu.gpu.flush_frame_buffer {
+            for (i, pixel) in cpu.mmu.gpu.frame_buffer.chunks(3).enumerate() {
+                buffer[i] = (pixel[2] as u32) << 16 | (pixel[1] as u32) << 8 | (pixel[0] as u32)
+            }
+            window.update_with_buffer(&buffer, WIDTH, HEIGHT).unwrap();
+            cpu.mmu.gpu.flushed();
+        } else {
+            sleep(Duration::from_nanos(2))
+        }
     }
 }

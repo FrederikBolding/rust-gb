@@ -40,7 +40,7 @@ impl CPU {
         msb | lsb
     }
 
-    pub fn step(&mut self) {
+    pub fn step(&mut self) -> u8 {
         let byte = self.read_current_byte();
         let is_prefixed = byte == 0xCB;
         let instruction_byte = if is_prefixed {
@@ -50,10 +50,11 @@ impl CPU {
         };
         //println!("Byte: 0x{:02x}", instruction_byte);
         let instruction = Instruction::from_byte(instruction_byte, is_prefixed).unwrap();
-        println!("Instruction {:?}", instruction);
+        //println!("Instruction {:?}", instruction);
         let (next_program_counter, cycles) = self.execute(instruction);
         self.mmu.step(cycles);
         self.program_counter = next_program_counter;
+        cycles
     }
 
     fn get_instruction_target_byte(&mut self, target: InstructionTarget) -> u8 {

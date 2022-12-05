@@ -52,11 +52,10 @@ pub const ZERO_PAGE_SIZE: usize = ZERO_PAGE_END - ZERO_PAGE_START + 1;
 
 pub struct MMU {
     booting: bool,
-    gpu: GPU,
+    pub gpu: GPU,
     bios: [u8; BIOS_SIZE],
     rom_bank_0: [u8; ROM_BANK_0_SIZE],
     rom_bank_n: [u8; ROM_BANK_N_SIZE],
-    graphics_ram: [u8; VRAM_SIZE],
     external_ram: [u8; EXTERNAL_RAM_SIZE],
     working_ram: [u8; WORKING_RAM_SIZE],
     zero_page_ram: [u8; ZERO_PAGE_SIZE],
@@ -70,7 +69,6 @@ impl MMU {
             bios: [0; BIOS_SIZE],
             rom_bank_0: [0; ROM_BANK_0_SIZE],
             rom_bank_n: [0; ROM_BANK_N_SIZE],
-            graphics_ram: [0; VRAM_SIZE],
             external_ram: [0; EXTERNAL_RAM_SIZE],
             working_ram: [0; WORKING_RAM_SIZE],
             zero_page_ram: [0; ZERO_PAGE_SIZE],
@@ -120,7 +118,7 @@ impl MMU {
             }
             ROM_BANK_0_START..=ROM_BANK_0_END => self.rom_bank_0[address],
             ROM_BANK_N_START..=ROM_BANK_N_END => self.rom_bank_n[address - ROM_BANK_N_START],
-            VRAM_START..=VRAM_END => self.graphics_ram[address - VRAM_START],
+            VRAM_START..=VRAM_END => self.gpu.vram[address - VRAM_START],
             EXTERNAL_RAM_START..=EXTERNAL_RAM_END => {
                 self.external_ram[address - EXTERNAL_RAM_START]
             }
@@ -129,12 +127,14 @@ impl MMU {
             SHADOW_WORKING_RAM_START..=SHADOW_WORKING_RAM_END => {
                 self.working_ram[address - SHADOW_WORKING_RAM_START]
             }
-            IO_START..=IO_END => {
-                todo!(
+            IO_START..=IO_END => match address {
+                0xFF42 => self.gpu.scroll_y,
+                0xFF44 => self.gpu.line,
+                _ => todo!(
                     "Tried to read from unimplemented IO register 0x{:02x}",
                     address
-                );
-            }
+                ),
+            },
             ZERO_PAGE_START..=ZERO_PAGE_END => self.zero_page_ram[address - ZERO_PAGE_START],
             _ => {
                 panic!("Failed to read memory at 0x{:02x}", address);
@@ -153,7 +153,7 @@ impl MMU {
                 self.rom_bank_n[address - ROM_BANK_N_START] = value;
             }
             VRAM_START..=VRAM_END => {
-                self.graphics_ram[address - VRAM_START] = value;
+                self.gpu.write_vram(address - VRAM_START, value);
             }
             EXTERNAL_RAM_START..=EXTERNAL_RAM_END => {
                 self.external_ram[address - EXTERNAL_RAM_START] = value;
@@ -163,7 +163,16 @@ impl MMU {
             }
             IO_START..=IO_END => {
                 // TODO
-                println!("Wrote to unimplemented IO register 0x{:02x}", address);
+                match address {
+                    0xFF40 => {
+                        // TODO: A bunch more flags
+                        self.gpu.background_map = value & 0x08 == 0x08;
+                    }
+                    0xFF42 => self.gpu.scroll_y = value,
+                    0xFF43 => self.gpu.scroll_x = value,
+                    0xFF47 => self.gpu.background_palette = value,
+                    _ => println!("Wrote to unimplemented IO register 0x{:02x} 0x{:02x}", address, value),
+                }
             }
             ZERO_PAGE_START..=ZERO_PAGE_END => {
                 self.zero_page_ram[address - ZERO_PAGE_START] = value
