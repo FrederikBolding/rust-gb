@@ -38,6 +38,12 @@ pub const WORKING_RAM_SIZE: usize = WORKING_RAM_END - WORKING_RAM_START + 1;
 pub const SHADOW_WORKING_RAM_START: usize = 0xE000;
 pub const SHADOW_WORKING_RAM_END: usize = 0xFDFF;
 
+pub const SPRITE_INFO_START: usize = 0xFE00;
+pub const SPRITE_INFO_END: usize = 0xFE9F;
+
+pub const IO_START: usize = 0xFF00;
+pub const IO_END: usize = 0xFF7F;
+
 pub const ZERO_PAGE_START: usize = 0xFF80;
 pub const ZERO_PAGE_END: usize = 0xFFFE;
 pub const ZERO_PAGE_SIZE: usize = ZERO_PAGE_END - ZERO_PAGE_START + 1;
@@ -90,7 +96,7 @@ impl MMU {
 
     pub fn read(&mut self, address: u16) -> u8 {
         let address = address as usize;
-        println!("Read 0x{:02x}", address);
+        //println!("Read 0x{:02x}", address);
         match address {
             BIOS_START..=BIOS_END => {
                 if self.booting && address <= 0x00FE {
@@ -122,7 +128,7 @@ impl MMU {
 
     pub fn write(&mut self, address: u16, value: u8) {
         let address = address as usize;
-        println!("Write 0x{:02x} 0x{:02x}", address, value);
+        //println!("Write 0x{:02x} 0x{:02x}", address, value);
         match address {
             ROM_BANK_0_START..=ROM_BANK_0_END => {
                 self.rom_bank_0[address] = value;
@@ -138,6 +144,10 @@ impl MMU {
             }
             WORKING_RAM_START..=WORKING_RAM_END => {
                 self.working_ram[address - WORKING_RAM_START] = value
+            }
+            IO_START..=IO_END => {
+                // TODO
+                println!("Wrote to unimplemented IO register 0x{:02x}", address);
             }
             ZERO_PAGE_START..=ZERO_PAGE_END => {
                 self.zero_page_ram[address - ZERO_PAGE_START] = value

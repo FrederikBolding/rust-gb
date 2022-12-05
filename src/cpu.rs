@@ -1,5 +1,5 @@
 use crate::instruction::{
-    is_word_target, Indirect, Instruction, InstructionTarget, JumpTest, LoadType, BitPosition
+    is_word_target, BitPosition, Indirect, Instruction, InstructionTarget, JumpTest, LoadType,
 };
 use crate::mmu::MMU;
 use crate::registers::{RegisterTarget, Registers, WordRegisterTarget};
@@ -48,7 +48,7 @@ impl CPU {
         } else {
             byte
         };
-        println!("Byte: 0x{:02x}", instruction_byte);
+        //println!("Byte: 0x{:02x}", instruction_byte);
         let instruction = Instruction::from_byte(instruction_byte, is_prefixed).unwrap();
         println!("Instruction {:?}", instruction);
         let next_program_counter = self.execute(instruction);
@@ -73,6 +73,7 @@ impl CPU {
     }
 
     fn set_instruction_target_byte(&mut self, target: InstructionTarget, value: u8) {
+        //println!("Set {:?} to  0x{:02x}", target, value);
         match target {
             InstructionTarget::A => self.registers.set(RegisterTarget::A, value),
             InstructionTarget::B => self.registers.set(RegisterTarget::B, value),
@@ -100,6 +101,7 @@ impl CPU {
     }
 
     fn set_instruction_target_word(&mut self, target: InstructionTarget, value: u16) {
+        //println!("Set {:?} to 0x{:02x}", target, value);
         match target {
             InstructionTarget::BC => self.registers.set_word(WordRegisterTarget::BC, value),
             InstructionTarget::DE => self.registers.set_word(WordRegisterTarget::DE, value),
@@ -208,10 +210,10 @@ impl CPU {
                 LoadType::AFromIndirect(source) => {
                     let address = match source {
                         Indirect::BCIndirect => {
-                            self.get_instruction_target_byte(InstructionTarget::BC) as u16
+                            self.get_instruction_target_word(InstructionTarget::BC)
                         }
                         Indirect::DEIndirect => {
-                            self.get_instruction_target_byte(InstructionTarget::DE) as u16
+                            self.get_instruction_target_word(InstructionTarget::DE)
                         }
                         Indirect::HLIndirectMinus => todo!(),
                         Indirect::HLIndirectPlus => todo!(),
@@ -405,6 +407,20 @@ impl CPU {
                     next_program_counter
                 }
             }
+            Instruction::CP(target) => {
+                let a_value = self.get_instruction_target_byte(InstructionTarget::A);
+                let target_value = self.get_instruction_target_byte(target);
+
+                self.registers.zero = a_value == target_value;
+                self.registers.sub = true;
+                // TODO: Half-carry
+                self.registers.carry = a_value < target_value;
+
+                match target {
+                    InstructionTarget::D8 => self.program_counter.wrapping_add(2),
+                    _ => self.program_counter.wrapping_add(1),
+                }
+            }
             Instruction::CALL(test) => {
                 let condition = match test {
                     JumpTest::NotZero => !self.registers.zero,
@@ -420,6 +436,56 @@ impl CPU {
                 } else {
                     next_program_counter
                 }
+            }
+            Instruction::RET(test) => {
+                let condition = match test {
+                    JumpTest::NotZero => !self.registers.zero,
+                    JumpTest::NotCarry => !self.registers.carry,
+                    JumpTest::Zero => self.registers.zero,
+                    JumpTest::Carry => self.registers.carry,
+                    JumpTest::Always => true,
+                };
+                if condition {
+                    self.pop()
+                } else {
+                    self.program_counter.wrapping_add(1)
+                }
+            }
+            Instruction::RL(target) => {
+                let value = self.get_instruction_target_byte(target);
+                let result = (value << 1) | self.registers.carry as u8;
+                self.set_instruction_target_byte(target, result);
+                self.registers.zero = result == 0;
+                self.registers.sub = false;
+                self.registers.half_carry = false;
+                self.registers.carry = (value & 0x80) == 0x80;
+                self.program_counter.wrapping_add(2)
+            }
+            Instruction::RLA => {
+                let value = self.get_instruction_target_byte(InstructionTarget::A);
+                let result = (value << 1) | self.registers.carry as u8;
+                self.set_instruction_target_byte(InstructionTarget::A, result);
+                self.registers.zero = result == 0;
+                self.registers.sub = false;
+                self.registers.half_carry = false;
+                self.registers.carry = (value & 0x80) == 0x80;
+                self.program_counter.wrapping_add(1)
+            }
+            Instruction::SWAP(target) => {
+                let value = self.get_instruction_target_byte(target);
+                let result = ((value) << 4) | (value >> 4);
+                self.set_instruction_target_byte(target, result);
+                self.registers.zero = result == 0;
+                self.registers.sub = false;
+                self.registers.half_carry = false;
+                self.registers.carry = false;
+                self.program_counter.wrapping_add(1)
+            }
+            Instruction::SCF => {
+                self.registers.sub = false;
+                self.registers.half_carry = false;
+                self.registers.carry = true;
+                self.program_counter.wrapping_add(1)
             }
             _ => {
                 panic!("Failed to execute {:?}", instruction);
@@ -531,5 +597,21 @@ fn test_bit() {
     assert_eq!(cpu.registers.zero, true);
     assert_eq!(cpu.registers.sub, false);
     assert_eq!(cpu.registers.half_carry, true);
+    assert_eq!(cpu.registers.carry, false);
+}
+
+#[test]
+fn test_swap() {
+    let mmu = MMU::new();
+    let mut cpu = CPU::new(mmu);
+    cpu.mmu.skip_boot();
+    cpu.registers.a = 0b1011_0101;
+
+    cpu.execute(Instruction::SWAP(InstructionTarget::A));
+
+    assert_eq!(cpu.registers.a, 0b0101_1011);
+    assert_eq!(cpu.registers.zero, false);
+    assert_eq!(cpu.registers.sub, false);
+    assert_eq!(cpu.registers.half_carry, false);
     assert_eq!(cpu.registers.carry, false);
 }
