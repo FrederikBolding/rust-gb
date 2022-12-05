@@ -11,6 +11,8 @@
 // FF00-FF7F - Memory-mapped IO
 // FF80-FFFF - Zero-page RAM
 
+use crate::gpu::GPU;
+
 pub const BIOS_START: usize = 0x00;
 pub const BIOS_END: usize = 0xFF;
 pub const BIOS_SIZE: usize = BIOS_END - BIOS_START + 1;
@@ -50,6 +52,7 @@ pub const ZERO_PAGE_SIZE: usize = ZERO_PAGE_END - ZERO_PAGE_START + 1;
 
 pub struct MMU {
     booting: bool,
+    gpu: GPU,
     bios: [u8; BIOS_SIZE],
     rom_bank_0: [u8; ROM_BANK_0_SIZE],
     rom_bank_n: [u8; ROM_BANK_N_SIZE],
@@ -63,6 +66,7 @@ impl MMU {
     pub fn new() -> Self {
         Self {
             booting: true,
+            gpu: GPU::new(),
             bios: [0; BIOS_SIZE],
             rom_bank_0: [0; ROM_BANK_0_SIZE],
             rom_bank_n: [0; ROM_BANK_N_SIZE],
@@ -71,6 +75,10 @@ impl MMU {
             working_ram: [0; WORKING_RAM_SIZE],
             zero_page_ram: [0; ZERO_PAGE_SIZE],
         }
+    }
+
+    pub fn step(&mut self, cycles: u8) {
+        self.gpu.step(cycles);
     }
 
     pub fn skip_boot(&mut self) {
@@ -118,7 +126,15 @@ impl MMU {
             }
             WORKING_RAM_START..=WORKING_RAM_END => self.working_ram[address - WORKING_RAM_START],
             // Mirrors working RAM but does not allow writing
-            SHADOW_WORKING_RAM_START..=SHADOW_WORKING_RAM_END => self.working_ram[address - SHADOW_WORKING_RAM_START],
+            SHADOW_WORKING_RAM_START..=SHADOW_WORKING_RAM_END => {
+                self.working_ram[address - SHADOW_WORKING_RAM_START]
+            }
+            IO_START..=IO_END => {
+                todo!(
+                    "Tried to read from unimplemented IO register 0x{:02x}",
+                    address
+                );
+            }
             ZERO_PAGE_START..=ZERO_PAGE_END => self.zero_page_ram[address - ZERO_PAGE_START],
             _ => {
                 panic!("Failed to read memory at 0x{:02x}", address);
