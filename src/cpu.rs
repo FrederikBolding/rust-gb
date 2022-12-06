@@ -140,12 +140,40 @@ impl CPU {
                 (self.program_counter.wrapping_add(1), 1)
             }
             Instruction::ADD(target) => {
-                let value1 = self.get_instruction_target_byte(target);
-                let value2 = self.registers.get(RegisterTarget::A);
+                let value1 = self.get_instruction_target_byte(target) as u32;
+                let value2 = self.registers.get(RegisterTarget::A) as u32;
                 let value = value1.wrapping_add(value2);
-                self.registers.set(RegisterTarget::A, value);
+                self.registers.set(RegisterTarget::A, value as u8);
                 self.registers.zero = value == 0;
                 self.registers.sub = false;
+                self.registers.carry = (value & 0x100) == 0x100;
+                // TODO: Half-carry
+                match target {
+                    InstructionTarget::D8 => (self.program_counter.wrapping_add(2), 8),
+                    InstructionTarget::HLI => (self.program_counter.wrapping_add(1), 8),
+                    _ => (self.program_counter.wrapping_add(1), 4),
+                }
+            }
+            Instruction::ADDHL(target) => {
+                let value1 = self.get_instruction_target_word(target) as u32;
+                let value2 = self.get_instruction_target_word(InstructionTarget::HL) as u32;
+                let value = value1.wrapping_add(value2);
+                self.registers.set(RegisterTarget::A, value as u8);
+                self.registers.zero = value == 0;
+                self.registers.sub = false;
+                self.registers.carry = (value & 0x10000) == 0x10000;
+                // TODO: Half-carry
+                self.set_instruction_target_word(InstructionTarget::HL, value as u16);
+                (self.program_counter.wrapping_add(1), 8)
+            }
+            Instruction::ADC(target) => {
+                let value1 = self.get_instruction_target_byte(target) as u32;
+                let value2 = self.registers.get(RegisterTarget::A) as u32;
+                let value = value1.wrapping_add(value2).wrapping_add(self.registers.carry as u32);
+                self.registers.set(RegisterTarget::A, value as u8);
+                self.registers.zero = value == 0;
+                self.registers.sub = false;
+                self.registers.carry = (value & 0x100) == 0x100;
                 // TODO: Half-carry
                 match target {
                     InstructionTarget::D8 => (self.program_counter.wrapping_add(2), 8),
@@ -154,12 +182,28 @@ impl CPU {
                 }
             }
             Instruction::SUB(target) => {
-                let value1 = self.get_instruction_target_byte(target);
-                let value2 = self.registers.get(RegisterTarget::A);
+                let value1 = self.get_instruction_target_byte(target) as u32;
+                let value2 = self.registers.get(RegisterTarget::A) as u32;
                 let value = value1.wrapping_sub(value2);
-                self.registers.set(RegisterTarget::A, value);
+                self.registers.set(RegisterTarget::A, value as u8);
                 self.registers.zero = value == 0;
                 self.registers.sub = true;
+                self.registers.carry = (value & 0x100) == 0x100;
+                // TODO: Half-carry
+                match target {
+                    InstructionTarget::D8 => (self.program_counter.wrapping_add(2), 8),
+                    InstructionTarget::HLI => (self.program_counter.wrapping_add(1), 8),
+                    _ => (self.program_counter.wrapping_add(1), 4),
+                }
+            }
+            Instruction::SBC(target) => {
+                let value1 = self.get_instruction_target_byte(target) as u32;
+                let value2 = self.registers.get(RegisterTarget::A) as u32;
+                let value = value1.wrapping_sub(value2).wrapping_sub(self.registers.carry as u32);
+                self.registers.set(RegisterTarget::A, value as u8);
+                self.registers.zero = value == 0;
+                self.registers.sub = true;
+                self.registers.carry = (value & 0x100) == 0x100;
                 // TODO: Half-carry
                 match target {
                     InstructionTarget::D8 => (self.program_counter.wrapping_add(2), 8),
@@ -564,6 +608,13 @@ impl CPU {
             }
             Instruction::EI => {
                 self.interrupts_enabled = true;
+                (self.program_counter.wrapping_add(1), 4)
+            }
+            Instruction::CPL => {
+                let value = self.get_instruction_target_byte(InstructionTarget::A);
+                self.set_instruction_target_byte(InstructionTarget::A, !value);
+                self.registers.sub = true;
+                self.registers.half_carry = true;
                 (self.program_counter.wrapping_add(1), 4)
             }
             _ => {

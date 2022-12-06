@@ -1,4 +1,4 @@
-use crate::mmu::VRAM_SIZE;
+use crate::mmu::{VRAM_SIZE, OAM_SIZE};
 
 pub const WIDTH: usize = 160;
 pub const HEIGHT: usize = 144;
@@ -33,6 +33,7 @@ pub struct GPU {
     pub flush_frame_buffer: bool,
     pub frame_buffer: [u8; FRAME_BUFFER_SIZE],
     pub vram: [u8; VRAM_SIZE],
+    pub oam: [u8; OAM_SIZE],
     tileset: [Tile; TILE_COUNT],
 
     mode_clock: u16,
@@ -56,6 +57,7 @@ impl GPU {
             flush_frame_buffer: false,
             frame_buffer: [0; FRAME_BUFFER_SIZE],
             vram: [0; VRAM_SIZE],
+            oam: [0; OAM_SIZE],
             tileset: [Tile { data: [0; 64] }; TILE_COUNT],
             mode_clock: 0,
             mode: GPUMode::OAMAccess,
@@ -125,6 +127,10 @@ impl GPU {
         if address < 0x1800 {
             self.update_tile(address, value);
         }
+    }
+
+    pub fn write_oam(&mut self, address: usize, value: u8) {
+        self.oam[address] = value;
     }
 
     fn update_tile(&mut self, address: usize, _value: u8) {

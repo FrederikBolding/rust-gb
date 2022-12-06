@@ -7,7 +7,7 @@
 // A000-BFFF - External RAM
 // C000-DFFF - Working RAM
 // E000-FDFF - Shadow working RAM
-// FE00-FE9F - Sprite information
+// FE00-FE9F - Sprite information (OAM)
 // FF00-FF7F - Memory-mapped IO
 // FF80-FFFF - Zero-page RAM
 
@@ -19,7 +19,6 @@ pub const BIOS_SIZE: usize = BIOS_END - BIOS_START + 1;
 
 pub const ROM_BANK_0_START: usize = 0x0000;
 pub const ROM_BANK_0_END: usize = 0x3FFF;
-pub const ROM_BANK_0_SIZE: usize = ROM_BANK_0_END - ROM_BANK_0_START + 1;
 
 pub const ROM_BANK_N_START: usize = 0x4000;
 pub const ROM_BANK_N_END: usize = 0x7FFF;
@@ -40,8 +39,9 @@ pub const WORKING_RAM_SIZE: usize = WORKING_RAM_END - WORKING_RAM_START + 1;
 pub const SHADOW_WORKING_RAM_START: usize = 0xE000;
 pub const SHADOW_WORKING_RAM_END: usize = 0xFDFF;
 
-pub const SPRITE_INFO_START: usize = 0xFE00;
-pub const SPRITE_INFO_END: usize = 0xFE9F;
+pub const OAM_START: usize = 0xFE00;
+pub const OAM_END: usize = 0xFE9F;
+pub const OAM_SIZE: usize = OAM_END - OAM_START + 1;
 
 pub const UNUSED_START: usize = 0xFEA0;
 pub const UNUSED_END: usize = 0xFEFF;
@@ -57,11 +57,13 @@ pub struct MMU {
     booting: bool,
     pub gpu: GPU,
     bios: [u8; BIOS_SIZE],
-    rom_bank_0: [u8; ROM_BANK_0_SIZE],
-    rom_bank_n: [u8; ROM_BANK_N_SIZE],
+    rom: Vec<u8>,
     external_ram: [u8; EXTERNAL_RAM_SIZE],
     working_ram: [u8; WORKING_RAM_SIZE],
     zero_page_ram: [u8; ZERO_PAGE_SIZE],
+    rom_bank: u8,
+    // TODO: Support interrupts - these aren't actually supported yet
+    interrupt_enable: u8,
 }
 
 impl MMU {
@@ -70,11 +72,12 @@ impl MMU {
             booting: true,
             gpu: GPU::new(),
             bios: [0; BIOS_SIZE],
-            rom_bank_0: [0; ROM_BANK_0_SIZE],
-            rom_bank_n: [0; ROM_BANK_N_SIZE],
+            rom: vec![0; 0],
             external_ram: [0; EXTERNAL_RAM_SIZE],
             working_ram: [0; WORKING_RAM_SIZE],
             zero_page_ram: [0; ZERO_PAGE_SIZE],
+            rom_bank: 0,
+            interrupt_enable: 0,
         }
     }
 
@@ -96,12 +99,7 @@ impl MMU {
 
     pub fn load_rom(&mut self, rom: Vec<u8>) {
         println!("Loading ROM...");
-        for i in 0..ROM_BANK_0_SIZE {
-            self.rom_bank_0[i] = rom[i];
-        }
-        for i in 0..ROM_BANK_N_SIZE {
-            self.rom_bank_n[i] = rom[ROM_BANK_0_SIZE + i];
-        }
+        self.rom = rom;
     }
 
     pub fn read(&mut self, address: u16) -> u8 {
@@ -112,12 +110,16 @@ impl MMU {
                 if self.booting {
                     self.bios[address]
                 } else {
-                    self.rom_bank_0[address]
+                    self.rom[address]
                 }
             }
-            ROM_BANK_0_START..=ROM_BANK_0_END => self.rom_bank_0[address],
-            ROM_BANK_N_START..=ROM_BANK_N_END => self.rom_bank_n[address - ROM_BANK_N_START],
+            ROM_BANK_0_START..=ROM_BANK_0_END => self.rom[address],
+            ROM_BANK_N_START..=ROM_BANK_N_END => {
+                let offset = ROM_BANK_N_SIZE * self.rom_bank as usize;
+                self.rom[offset + address - ROM_BANK_N_START]
+            }
             VRAM_START..=VRAM_END => self.gpu.vram[address - VRAM_START],
+            OAM_START..=OAM_END => self.gpu.oam[address - OAM_START],
             EXTERNAL_RAM_START..=EXTERNAL_RAM_END => {
                 self.external_ram[address - EXTERNAL_RAM_START]
             }
@@ -129,12 +131,14 @@ impl MMU {
             IO_START..=IO_END => match address {
                 0xFF42 => self.gpu.scroll_y,
                 0xFF44 => self.gpu.line,
+                0xFF41 => 0, // TODO
                 _ => todo!(
                     "Tried to read from unimplemented IO register 0x{:02x}",
                     address
                 ),
             },
             ZERO_PAGE_START..=ZERO_PAGE_END => self.zero_page_ram[address - ZERO_PAGE_START],
+            0xFFFF => self.interrupt_enable,
             _ => {
                 panic!("Failed to read memory at 0x{:02x}", address);
             }
@@ -146,13 +150,13 @@ impl MMU {
         //println!("Write 0x{:02x} 0x{:02x}", address, value);
         match address {
             ROM_BANK_0_START..=ROM_BANK_0_END => {
-                self.rom_bank_0[address] = value;
-            }
-            ROM_BANK_N_START..=ROM_BANK_N_END => {
-                self.rom_bank_n[address - ROM_BANK_N_START] = value;
+                self.write_rom(address as u16, value);
             }
             VRAM_START..=VRAM_END => {
                 self.gpu.write_vram(address - VRAM_START, value);
+            }
+            OAM_START..=OAM_END => {
+                self.gpu.write_oam(address - OAM_START, value);
             }
             EXTERNAL_RAM_START..=EXTERNAL_RAM_END => {
                 self.external_ram[address - EXTERNAL_RAM_START] = value;
@@ -183,9 +187,25 @@ impl MMU {
             ZERO_PAGE_START..=ZERO_PAGE_END => {
                 self.zero_page_ram[address - ZERO_PAGE_START] = value
             }
+            0xFFFF => self.interrupt_enable = value,
             _ => {
                 panic!("Failed to write memory at 0x{:02x}", address);
             }
+        }
+    }
+
+    fn write_rom(&mut self, address: u16, value: u8) {
+        match address & 0xf000 {
+            // RAM enabled flag
+            0x0000 | 0x1000 => {
+                // TODO
+            }
+            // ROM bank selection
+            0x2000 => {
+                println!("Setting ROM bank 0x{:2x} to {:?}", address, value);
+                self.rom_bank = value;
+            }
+            _ => panic!("Writing to unimplemented rom location"),
         }
     }
 }

@@ -29,13 +29,6 @@ pub enum InstructionTarget {
     SP,
     AF,
 }
-#[derive(Copy, Clone, Debug, PartialEq)]
-pub enum ADDHLTarget {
-    BC,
-    DE,
-    HL,
-    SP,
-}
 
 #[derive(Copy, Clone, Debug, PartialEq)]
 pub enum JumpTest {
@@ -130,7 +123,7 @@ pub enum Instruction {
 
     ADD(InstructionTarget),
     ADC(InstructionTarget),
-    ADDHL(ADDHLTarget),
+    ADDHL(InstructionTarget),
     ADDSP,
     SUB(InstructionTarget),
     SBC(InstructionTarget),
@@ -524,10 +517,10 @@ impl Instruction {
             0x86 => Some(Instruction::ADD(InstructionTarget::HLI)),
             0xc6 => Some(Instruction::ADD(InstructionTarget::D8)),
 
-            0x09 => Some(Instruction::ADDHL(ADDHLTarget::BC)),
-            0x19 => Some(Instruction::ADDHL(ADDHLTarget::DE)),
-            0x29 => Some(Instruction::ADDHL(ADDHLTarget::HL)),
-            0x39 => Some(Instruction::ADDHL(ADDHLTarget::SP)),
+            0x09 => Some(Instruction::ADDHL(InstructionTarget::BC)),
+            0x19 => Some(Instruction::ADDHL(InstructionTarget::DE)),
+            0x29 => Some(Instruction::ADDHL(InstructionTarget::HL)),
+            0x39 => Some(Instruction::ADDHL(InstructionTarget::SP)),
 
             0x8f => Some(Instruction::ADC(InstructionTarget::A)),
             0x88 => Some(Instruction::ADC(InstructionTarget::B)),
