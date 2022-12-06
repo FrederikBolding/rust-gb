@@ -7,6 +7,8 @@ use crate::registers::{RegisterTarget, Registers, WordRegisterTarget};
 pub struct CPU {
     program_counter: u16,
     stack_pointer: u16,
+    // TODO: Support interrupts - these aren't actually supported yet but we can toggle the flag for support
+    interrupts_enabled: bool,
 
     // Registers
     pub registers: Registers,
@@ -20,6 +22,7 @@ impl CPU {
         Self {
             program_counter: 0x0,
             stack_pointer: 0x00,
+            interrupts_enabled: false,
             registers: Registers::new(),
             mmu,
         }
@@ -48,7 +51,7 @@ impl CPU {
         } else {
             byte
         };
-        //println!("Byte: 0x{:02x}", instruction_byte);
+        //println!("{:?} Byte: 0x{:02x} ({:?})", self.program_counter, instruction_byte, is_prefixed);
         let instruction = Instruction::from_byte(instruction_byte, is_prefixed).unwrap();
         //println!("Instruction {:?}", instruction);
         let (next_program_counter, cycles) = self.execute(instruction);
@@ -235,8 +238,22 @@ impl CPU {
                         Indirect::DEIndirect => {
                             self.get_instruction_target_word(InstructionTarget::DE)
                         }
-                        Indirect::HLIndirectMinus => todo!(),
-                        Indirect::HLIndirectPlus => todo!(),
+                        Indirect::HLIndirectMinus => {
+                            let value = self.get_instruction_target_word(InstructionTarget::HL);
+                            self.set_instruction_target_word(
+                                InstructionTarget::HL,
+                                value.wrapping_sub(1),
+                            );
+                            value
+                        }
+                        Indirect::HLIndirectPlus => {
+                            let value = self.get_instruction_target_word(InstructionTarget::HL);
+                            self.set_instruction_target_word(
+                                InstructionTarget::HL,
+                                value.wrapping_add(1),
+                            );
+                            value
+                        }
                         Indirect::WordIndirect => self.read_next_word(),
                         Indirect::LastByteIndirect => {
                             let offset = self.get_instruction_target_byte(InstructionTarget::C);
@@ -541,6 +558,14 @@ impl CPU {
                 self.registers.carry = true;
                 (self.program_counter.wrapping_add(1), 4)
             }
+            Instruction::DI => {
+                self.interrupts_enabled = false;
+                (self.program_counter.wrapping_add(1), 4)
+            }
+            Instruction::EI => {
+                self.interrupts_enabled = true;
+                (self.program_counter.wrapping_add(1), 4)
+            }
             _ => {
                 panic!("Failed to execute {:?}", instruction);
             }
@@ -552,7 +577,7 @@ impl CPU {
 fn test_step() {
     let mmu = MMU::new();
     let mut cpu = CPU::new(mmu);
-    cpu.mmu.skip_boot();
+    cpu.mmu.finish_boot();
     cpu.mmu.write(0, 0x23); // INC(HL)
     cpu.mmu.write(1, 0xB5); // OR(L)
     cpu.mmu.write(2, 0xCB); // PREFIX
@@ -571,7 +596,7 @@ fn test_step() {
 fn test_add() {
     let mmu = MMU::new();
     let mut cpu = CPU::new(mmu);
-    cpu.mmu.skip_boot();
+    cpu.mmu.finish_boot();
     cpu.mmu.write(0, 0x3C); //INC A
     cpu.mmu.write(1, 0x04); // INC B
     cpu.mmu.write(2, 0x80); // ADD A,B
@@ -587,7 +612,7 @@ fn test_add() {
 fn test_load_byte() {
     let mmu = MMU::new();
     let mut cpu = CPU::new(mmu);
-    cpu.mmu.skip_boot();
+    cpu.mmu.finish_boot();
     cpu.mmu.write(0, 0x04); // INC B
     cpu.mmu.write(1, 0x50); // LD D, B
     for _ in 0..=1 {
@@ -602,7 +627,7 @@ fn test_load_byte() {
 fn test_push_pop() {
     let mmu = MMU::new();
     let mut cpu = CPU::new(mmu);
-    cpu.mmu.skip_boot();
+    cpu.mmu.finish_boot();
     cpu.registers.b = 0x4;
     cpu.registers.c = 0x89;
     cpu.stack_pointer = 0x10;
@@ -622,7 +647,7 @@ fn test_push_pop() {
 fn test_jr() {
     let mmu = MMU::new();
     let mut cpu = CPU::new(mmu);
-    cpu.mmu.skip_boot();
+    cpu.mmu.finish_boot();
     cpu.program_counter = 0xF8;
     cpu.mmu.write(0xF9, 0x4);
     let (next_pc, _) = cpu.execute(Instruction::JR(JumpTest::Always));
@@ -638,7 +663,7 @@ fn test_jr() {
 fn test_bit() {
     let mmu = MMU::new();
     let mut cpu = CPU::new(mmu);
-    cpu.mmu.skip_boot();
+    cpu.mmu.finish_boot();
     cpu.registers.a = 0b1011_0100;
 
     cpu.execute(Instruction::BIT(InstructionTarget::A, BitPosition::B2));
@@ -658,7 +683,7 @@ fn test_bit() {
 fn test_swap() {
     let mmu = MMU::new();
     let mut cpu = CPU::new(mmu);
-    cpu.mmu.skip_boot();
+    cpu.mmu.finish_boot();
     cpu.registers.a = 0b1011_0101;
 
     cpu.execute(Instruction::SWAP(InstructionTarget::A));

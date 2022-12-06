@@ -43,6 +43,9 @@ pub const SHADOW_WORKING_RAM_END: usize = 0xFDFF;
 pub const SPRITE_INFO_START: usize = 0xFE00;
 pub const SPRITE_INFO_END: usize = 0xFE9F;
 
+pub const UNUSED_START: usize = 0xFEA0;
+pub const UNUSED_END: usize = 0xFEFF;
+
 pub const IO_START: usize = 0xFF00;
 pub const IO_END: usize = 0xFF7F;
 
@@ -79,8 +82,9 @@ impl MMU {
         self.gpu.step(cycles);
     }
 
-    pub fn skip_boot(&mut self) {
+    pub fn finish_boot(&mut self) {
         self.booting = false;
+        println!("Finished boot");
     }
 
     pub fn load_bios(&mut self, bios: Vec<u8>) {
@@ -105,12 +109,7 @@ impl MMU {
         //println!("Read 0x{:02x}", address);
         match address {
             BIOS_START..=BIOS_END => {
-                if self.booting && address <= 0x00FE {
-                    // Boot has finished when we read from this address
-                    if address == 0x00FE {
-                        println!("Finished BIOS");
-                        self.booting = false;
-                    }
+                if self.booting {
                     self.bios[address]
                 } else {
                     self.rom_bank_0[address]
@@ -171,8 +170,15 @@ impl MMU {
                     0xFF42 => self.gpu.scroll_y = value,
                     0xFF43 => self.gpu.scroll_x = value,
                     0xFF47 => self.gpu.background_palette = value,
-                    _ => println!("Wrote to unimplemented IO register 0x{:02x} 0x{:02x}", address, value),
+                    0xFF50 => self.finish_boot(),
+                    _ => println!(
+                        "Wrote to unimplemented IO register 0x{:02x} 0x{:02x}",
+                        address, value
+                    ),
                 }
+            }
+            UNUSED_START..=UNUSED_END => {
+                // no-op
             }
             ZERO_PAGE_START..=ZERO_PAGE_END => {
                 self.zero_page_ram[address - ZERO_PAGE_START] = value
