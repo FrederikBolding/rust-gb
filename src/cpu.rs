@@ -8,6 +8,7 @@ pub struct CPU {
     program_counter: u16,
     stack_pointer: u16,
     interrupts_enabled: bool,
+    halted: bool,
 
     // Registers
     pub registers: Registers,
@@ -22,6 +23,7 @@ impl CPU {
             program_counter: 0x0,
             stack_pointer: 0x00,
             interrupts_enabled: false,
+            halted: false,
             registers: Registers::new(),
             mmu,
         }
@@ -55,7 +57,10 @@ impl CPU {
         //println!("Instruction {:?}", instruction);
         let (next_program_counter, cycles) = self.execute(instruction);
         self.mmu.step(cycles);
-        self.program_counter = next_program_counter;
+
+        if !self.halted {
+            self.program_counter = next_program_counter;
+        }
 
         if self.interrupts_enabled {
             // TODO: Run interrupt
@@ -160,6 +165,10 @@ impl CPU {
             Instruction::NOP => {
                 // no-op
                 (self.program_counter.wrapping_add(1), 1)
+            }
+            Instruction::HALT => {
+                self.halted = true;
+                (self.program_counter.wrapping_add(1), 4)
             }
             Instruction::ADD(target) => {
                 let value1 = self.get_instruction_target_byte(target) as u32;
@@ -627,6 +636,34 @@ impl CPU {
                 };
                 (self.program_counter.wrapping_add(2), cycles)
             }
+            Instruction::SLA(target) => {
+                let value = self.get_instruction_target_byte(target);
+                let result = value << 1;
+                self.set_instruction_target_byte(target, result);
+                self.registers.zero = result == 0;
+                self.registers.sub = false;
+                self.registers.half_carry = false;
+                self.registers.carry = (value & 0x80) == 0x80;
+                let cycles = match target {
+                    InstructionTarget::HLI => 16,
+                    _ => 8,
+                };
+                (self.program_counter.wrapping_add(2), cycles)
+            }
+            Instruction::SRL(target) => {
+                let value = self.get_instruction_target_byte(target);
+                let result = value >> 1;
+                self.set_instruction_target_byte(target, result);
+                self.registers.zero = result == 0;
+                self.registers.sub = false;
+                self.registers.half_carry = false;
+                self.registers.carry = (value & 0x1) == 0x1;
+                let cycles = match target {
+                    InstructionTarget::HLI => 16,
+                    _ => 8,
+                };
+                (self.program_counter.wrapping_add(2), cycles)
+            }
             Instruction::RRA => {
                 let value = self.get_instruction_target_byte(InstructionTarget::A);
                 let result = (value >> 1) | ((self.registers.carry as u8) << 7);
@@ -645,6 +682,17 @@ impl CPU {
                 self.registers.sub = false;
                 self.registers.half_carry = false;
                 self.registers.carry = (value & 0x1) == 0x1;
+                (self.program_counter.wrapping_add(1), 4)
+            }
+            Instruction::RLCA => {
+                let value = self.get_instruction_target_byte(InstructionTarget::A);
+                let carry = value >> 7;
+                let result = (value << 1) | carry;
+                self.set_instruction_target_byte(InstructionTarget::A, result);
+                self.registers.zero = false;
+                self.registers.sub = false;
+                self.registers.half_carry = false;
+                self.registers.carry = carry == 1;
                 (self.program_counter.wrapping_add(1), 4)
             }
             Instruction::SWAP(target) => {

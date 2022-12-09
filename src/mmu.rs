@@ -132,7 +132,6 @@ impl MMU {
                 self.external_ram[address - EXTERNAL_RAM_START]
             }
             WORKING_RAM_START..=WORKING_RAM_END => self.working_ram[address - WORKING_RAM_START],
-            // Mirrors working RAM but does not allow writing
             SHADOW_WORKING_RAM_START..=SHADOW_WORKING_RAM_END => {
                 self.working_ram[address - SHADOW_WORKING_RAM_START]
             }
@@ -187,6 +186,9 @@ impl MMU {
             WORKING_RAM_START..=WORKING_RAM_END => {
                 self.working_ram[address - WORKING_RAM_START] = value
             }
+            SHADOW_WORKING_RAM_START..=SHADOW_WORKING_RAM_END => {
+                self.working_ram[address - SHADOW_WORKING_RAM_START] = value
+            }
             IO_START..=IO_END => {
                 // TODO
                 match address {
@@ -195,7 +197,7 @@ impl MMU {
                         self.gpu.background_map = value & 0x08 == 0x08;
                     }
                     0xFF41 => {
-                        self.gpu.vblank_interrupt_enabled =  value & 0x08 == 0x08;
+                        self.gpu.vblank_interrupt_enabled = value & 0x08 == 0x08;
                         self.gpu.hblank_interrupt_enabled = value & 0x10 == 0x10;
                         self.gpu.oam_interrupt_enabled = value & 0x20 == 0x20;
                         self.gpu.line_equals_line_interrupt_enabled = value & 0x40 == 0x40;
