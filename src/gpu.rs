@@ -1,4 +1,4 @@
-use crate::mmu::{VRAM_SIZE, OAM_SIZE};
+use crate::mmu::{OAM_SIZE, VRAM_SIZE};
 
 pub const WIDTH: usize = 160;
 pub const HEIGHT: usize = 144;
@@ -37,7 +37,16 @@ pub struct GPU {
     tileset: [Tile; TILE_COUNT],
 
     mode_clock: u16,
-    mode: GPUMode,
+    pub mode: GPUMode,
+
+    // Interrupts
+    pub vblank_interrupt_flag: bool,
+    // All of these determine when to trigger the LCD status interrupt
+    pub vblank_interrupt_enabled: bool,
+    pub oam_interrupt_enabled: bool,
+    pub hblank_interrupt_enabled: bool,
+    pub line_equals_line_interrupt_enabled: bool, // TODO
+    pub lcdstat_interrupt_flag: bool,
 
     // Active line
     pub line: u8,
@@ -61,6 +70,12 @@ impl GPU {
             tileset: [Tile { data: [0; 64] }; TILE_COUNT],
             mode_clock: 0,
             mode: GPUMode::OAMAccess,
+            vblank_interrupt_enabled: false,
+            vblank_interrupt_flag: false,
+            oam_interrupt_enabled: false,
+            hblank_interrupt_enabled: false,
+            line_equals_line_interrupt_enabled: false,
+            lcdstat_interrupt_flag: false,
             line: 0,
             scroll_x: 0,
             scroll_y: 0,
@@ -86,10 +101,18 @@ impl GPU {
                     if self.line == 143 {
                         self.mode = GPUMode::VBlank;
 
+                        self.vblank_interrupt_flag = true;
+                        if self.vblank_interrupt_enabled {
+                            self.lcdstat_interrupt_flag = true;
+                        }
+
                         // Flushes frame buffer to screen elsewhere
                         self.flush_frame_buffer = true;
                     } else {
                         self.mode = GPUMode::OAMAccess;
+                        if self.oam_interrupt_enabled {
+                            self.lcdstat_interrupt_flag = true;
+                        }
                     }
                 }
             }
@@ -100,6 +123,9 @@ impl GPU {
 
                     if self.line > 153 {
                         self.mode = GPUMode::OAMAccess;
+                        if self.oam_interrupt_enabled {
+                            self.lcdstat_interrupt_flag = true;
+                        }
                         self.line = 0;
                     }
                 }
@@ -114,6 +140,9 @@ impl GPU {
                 if self.mode_clock >= 172 {
                     self.mode_clock = 0;
                     self.mode = GPUMode::HBlank;
+                    if self.hblank_interrupt_enabled {
+                        self.lcdstat_interrupt_flag = true;
+                    }
                     // End of this mode is end of scanline
                     self.render_scanline();
                 }

@@ -62,8 +62,12 @@ pub struct MMU {
     working_ram: [u8; WORKING_RAM_SIZE],
     zero_page_ram: [u8; ZERO_PAGE_SIZE],
     rom_bank: u8,
-    // TODO: Support interrupts - these aren't actually supported yet
-    interrupt_enable: u8,
+    // Interrupts
+    pub vblank_interrupt_enabled: bool,
+    pub lcdstat_interrupt_enabled: bool,
+    pub timer_interrupt_enabled: bool,  // TODO
+    pub serial_interrupt_enabled: bool, // TODO
+    pub joypad_interrupt_enabled: bool, // TODO
 }
 
 impl MMU {
@@ -77,7 +81,11 @@ impl MMU {
             working_ram: [0; WORKING_RAM_SIZE],
             zero_page_ram: [0; ZERO_PAGE_SIZE],
             rom_bank: 0,
-            interrupt_enable: 0,
+            vblank_interrupt_enabled: false,
+            lcdstat_interrupt_enabled: false,
+            timer_interrupt_enabled: false,
+            serial_interrupt_enabled: false,
+            joypad_interrupt_enabled: false,
         }
     }
 
@@ -129,16 +137,31 @@ impl MMU {
                 self.working_ram[address - SHADOW_WORKING_RAM_START]
             }
             IO_START..=IO_END => match address {
+                0xFF25 => 0, // TODO
                 0xFF42 => self.gpu.scroll_y,
                 0xFF44 => self.gpu.line,
-                0xFF41 => 0, // TODO
+                0xFF41 => {
+                    (if self.gpu.hblank_interrupt_enabled { 0x08 } else { 0x00 }
+                        | if self.gpu.vblank_interrupt_enabled { 0x10 } else { 0x00 }
+                        | if self.gpu.oam_interrupt_enabled { 0x20 } else { 0x00 }
+                        | if self.gpu.line_equals_line_interrupt_enabled { 0x40 } else { 0x00 }
+                        | if false { 0x04 } else { 0x00 } // TODO
+                        | (self.gpu.mode as u8 & 0x03))
+                }
                 _ => todo!(
                     "Tried to read from unimplemented IO register 0x{:02x}",
                     address
                 ),
             },
             ZERO_PAGE_START..=ZERO_PAGE_END => self.zero_page_ram[address - ZERO_PAGE_START],
-            0xFFFF => self.interrupt_enable,
+            0xFFFF => {
+                0b11100000
+                    | ((if self.joypad_interrupt_enabled { 1 } else { 0 }) << 4)
+                    | ((if self.serial_interrupt_enabled { 1 } else { 0 }) << 3)
+                    | ((if self.timer_interrupt_enabled { 1 } else { 0 }) << 2)
+                    | ((if self.lcdstat_interrupt_enabled { 1 } else { 0 }) << 1)
+                    | (if self.vblank_interrupt_enabled { 1 } else { 0 })
+            }
             _ => {
                 panic!("Failed to read memory at 0x{:02x}", address);
             }
@@ -171,6 +194,12 @@ impl MMU {
                         // TODO: A bunch more flags
                         self.gpu.background_map = value & 0x08 == 0x08;
                     }
+                    0xFF41 => {
+                        self.gpu.vblank_interrupt_enabled =  value & 0x08 == 0x08;
+                        self.gpu.hblank_interrupt_enabled = value & 0x10 == 0x10;
+                        self.gpu.oam_interrupt_enabled = value & 0x20 == 0x20;
+                        self.gpu.line_equals_line_interrupt_enabled = value & 0x40 == 0x40;
+                    }
                     0xFF42 => self.gpu.scroll_y = value,
                     0xFF43 => self.gpu.scroll_x = value,
                     0xFF47 => self.gpu.background_palette = value,
@@ -187,7 +216,13 @@ impl MMU {
             ZERO_PAGE_START..=ZERO_PAGE_END => {
                 self.zero_page_ram[address - ZERO_PAGE_START] = value
             }
-            0xFFFF => self.interrupt_enable = value,
+            0xFFFF => {
+                self.vblank_interrupt_enabled = (value & 0b1) == 0b1;
+                self.lcdstat_interrupt_enabled = (value & 0b10) == 0b10;
+                self.timer_interrupt_enabled = (value & 0b100) == 0b100;
+                self.serial_interrupt_enabled = (value & 0b1000) == 0b1000;
+                self.joypad_interrupt_enabled = (value & 0b10000) == 0b10000;
+            }
             _ => {
                 panic!("Failed to write memory at 0x{:02x}", address);
             }
@@ -199,6 +234,7 @@ impl MMU {
             // RAM enabled flag
             0x0000 | 0x1000 => {
                 // TODO
+                println!("Enable RAM");
             }
             // ROM bank selection
             0x2000 => {

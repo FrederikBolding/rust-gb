@@ -7,7 +7,6 @@ use crate::registers::{RegisterTarget, Registers, WordRegisterTarget};
 pub struct CPU {
     program_counter: u16,
     stack_pointer: u16,
-    // TODO: Support interrupts - these aren't actually supported yet but we can toggle the flag for support
     interrupts_enabled: bool,
 
     // Registers
@@ -57,7 +56,29 @@ impl CPU {
         let (next_program_counter, cycles) = self.execute(instruction);
         self.mmu.step(cycles);
         self.program_counter = next_program_counter;
+
+        if self.interrupts_enabled {
+            // TODO: Run interrupt
+            if self.mmu.vblank_interrupt_enabled && self.mmu.gpu.vblank_interrupt_flag {
+                self.mmu.gpu.vblank_interrupt_flag = false;
+                return cycles + self.interrupt(0x40);
+            }
+
+            if self.mmu.lcdstat_interrupt_enabled && self.mmu.gpu.lcdstat_interrupt_flag {
+                self.mmu.gpu.lcdstat_interrupt_flag = false;
+                return cycles + self.interrupt(0x48);
+            }
+        }
+
         cycles
+    }
+
+    fn interrupt(&mut self, address: u16) -> u8 {
+        self.interrupts_enabled = false;
+        self.push(self.program_counter);
+        self.program_counter = address;
+        self.mmu.step(12);
+        12
     }
 
     fn get_instruction_target_byte(&mut self, target: InstructionTarget) -> u8 {
@@ -108,11 +129,12 @@ impl CPU {
     fn set_instruction_target_word(&mut self, target: InstructionTarget, value: u16) {
         //println!("Set {:?} to 0x{:02x}", target, value);
         match target {
+            InstructionTarget::AF => self.registers.set_word(WordRegisterTarget::AF, value),
             InstructionTarget::BC => self.registers.set_word(WordRegisterTarget::BC, value),
             InstructionTarget::DE => self.registers.set_word(WordRegisterTarget::DE, value),
             InstructionTarget::HL => self.registers.set_word(WordRegisterTarget::HL, value),
             InstructionTarget::SP => self.stack_pointer = value,
-            _ => todo!(),
+            _ => todo!("Not implemented {:?}", target),
         }
     }
 
@@ -169,7 +191,9 @@ impl CPU {
             Instruction::ADC(target) => {
                 let value1 = self.get_instruction_target_byte(target) as u32;
                 let value2 = self.registers.get(RegisterTarget::A) as u32;
-                let value = value1.wrapping_add(value2).wrapping_add(self.registers.carry as u32);
+                let value = value1
+                    .wrapping_add(value2)
+                    .wrapping_add(self.registers.carry as u32);
                 self.registers.set(RegisterTarget::A, value as u8);
                 self.registers.zero = value == 0;
                 self.registers.sub = false;
@@ -199,7 +223,9 @@ impl CPU {
             Instruction::SBC(target) => {
                 let value1 = self.get_instruction_target_byte(target) as u32;
                 let value2 = self.registers.get(RegisterTarget::A) as u32;
-                let value = value1.wrapping_sub(value2).wrapping_sub(self.registers.carry as u32);
+                let value = value1
+                    .wrapping_sub(value2)
+                    .wrapping_sub(self.registers.carry as u32);
                 self.registers.set(RegisterTarget::A, value as u8);
                 self.registers.zero = value == 0;
                 self.registers.sub = true;
@@ -484,6 +510,7 @@ impl CPU {
                     (self.program_counter.wrapping_add(3), 12)
                 }
             }
+            Instruction::JPI => (self.get_instruction_target_word(InstructionTarget::HL), 4),
             Instruction::JR(test) => {
                 let jump_condition = match test {
                     JumpTest::NotZero => !self.registers.zero,
@@ -558,6 +585,10 @@ impl CPU {
                 };
                 (next_program_counter, cycles)
             }
+            Instruction::RETI => {
+                self.interrupts_enabled = true;
+                (self.pop(), 16)
+            }
             Instruction::RL(target) => {
                 let value = self.get_instruction_target_byte(target);
                 let result = (value << 1) | self.registers.carry as u8;
@@ -580,6 +611,40 @@ impl CPU {
                 self.registers.sub = false;
                 self.registers.half_carry = false;
                 self.registers.carry = (value & 0x80) == 0x80;
+                (self.program_counter.wrapping_add(1), 4)
+            }
+            Instruction::SRA(target) => {
+                let value = self.get_instruction_target_byte(target);
+                let result = (value >> 1) | (value & 0x80);
+                self.set_instruction_target_byte(target, result);
+                self.registers.zero = result == 0;
+                self.registers.sub = false;
+                self.registers.half_carry = false;
+                self.registers.carry = (value & 0x1) == 0x1;
+                let cycles = match target {
+                    InstructionTarget::HLI => 16,
+                    _ => 8,
+                };
+                (self.program_counter.wrapping_add(2), cycles)
+            }
+            Instruction::RRA => {
+                let value = self.get_instruction_target_byte(InstructionTarget::A);
+                let result = (value >> 1) | ((self.registers.carry as u8) << 7);
+                self.set_instruction_target_byte(InstructionTarget::A, result);
+                self.registers.zero = false;
+                self.registers.sub = false;
+                self.registers.half_carry = false;
+                self.registers.carry = (value & 0x1) == 0x1;
+                (self.program_counter.wrapping_add(1), 4)
+            }
+            Instruction::RR(target) => {
+                let value = self.get_instruction_target_byte(target);
+                let result = (value >> 1) | ((self.registers.carry as u8) << 7);
+                self.set_instruction_target_byte(target, result);
+                self.registers.zero = result == 0;
+                self.registers.sub = false;
+                self.registers.half_carry = false;
+                self.registers.carry = (value & 0x1) == 0x1;
                 (self.program_counter.wrapping_add(1), 4)
             }
             Instruction::SWAP(target) => {
