@@ -197,6 +197,17 @@ impl CPU {
                 self.set_instruction_target_word(InstructionTarget::HL, value as u16);
                 (self.program_counter.wrapping_add(1), 8)
             }
+            Instruction::ADDSP => {
+                let stack_pointer = self.get_instruction_target_word(InstructionTarget::SP) as i32;
+                let value = self.get_instruction_target_byte(InstructionTarget::D8) as i8 as i32;
+                let result = stack_pointer.wrapping_add(value);
+                self.set_instruction_target_word(InstructionTarget::SP, result as u16);
+                self.registers.zero = false;
+                self.registers.sub = false;
+                // TODO: Carry
+                // TODO: Half-carry
+                (self.program_counter.wrapping_add(2), 16)
+            }
             Instruction::ADC(target) => {
                 let value1 = self.get_instruction_target_byte(target) as u32;
                 let value2 = self.registers.get(RegisterTarget::A) as u32;
@@ -406,8 +417,16 @@ impl CPU {
                         .write(address.wrapping_add(1), (self.stack_pointer >> 8) as u8);
                     (self.program_counter.wrapping_add(3), 20)
                 }
-                _ => {
-                    panic!("Failed to load {:?}", load_type)
+                LoadType::HLFromSPN => {
+                    let stack_pointer = self.get_instruction_target_word(InstructionTarget::SP);
+                    let value = self.get_instruction_target_byte(InstructionTarget::D8) as i8 as i16 as u16;
+                    let result = stack_pointer.wrapping_add(value);
+                    self.set_instruction_target_word(InstructionTarget::HL, result);
+                    self.registers.sub = false;
+                    self.registers.zero = false;
+                    // TODO: Carry
+                    // TODO: Half-carry
+                    (self.program_counter.wrapping_add(2), 12)
                 }
             },
             Instruction::OR(target) => {

@@ -94,11 +94,11 @@ impl GPU {
         match self.mode {
             GPUMode::HBlank => {
                 if self.mode_clock >= 204 {
-                    self.mode_clock = 0;
+                    self.mode_clock -= 204;
 
                     self.line += 1;
 
-                    if self.line == 143 {
+                    if self.line == 144 {
                         self.mode = GPUMode::VBlank;
 
                         self.vblank_interrupt_flag = true;
@@ -118,10 +118,10 @@ impl GPU {
             }
             GPUMode::VBlank => {
                 if self.mode_clock >= 456 {
-                    self.mode_clock = 0;
+                    self.mode_clock -= 456;
                     self.line += 1;
 
-                    if self.line > 153 {
+                    if self.line == 154 {
                         self.mode = GPUMode::OAMAccess;
                         if self.oam_interrupt_enabled {
                             self.lcdstat_interrupt_flag = true;
@@ -132,13 +132,13 @@ impl GPU {
             }
             GPUMode::OAMAccess => {
                 if self.mode_clock >= 80 {
-                    self.mode_clock = 0;
+                    self.mode_clock -= 80;
                     self.mode = GPUMode::VRAMAccess;
                 }
             }
             GPUMode::VRAMAccess => {
                 if self.mode_clock >= 172 {
-                    self.mode_clock = 0;
+                    self.mode_clock -= 172;
                     self.mode = GPUMode::HBlank;
                     if self.hblank_interrupt_enabled {
                         self.lcdstat_interrupt_flag = true;

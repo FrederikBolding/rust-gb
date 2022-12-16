@@ -108,6 +108,9 @@ impl MMU {
     pub fn load_rom(&mut self, rom: Vec<u8>) {
         println!("Loading ROM...");
         self.rom = rom;
+        println!("ROM type 0x{:2x}", self.rom[0x0147]);
+        let title = String::from(std::str::from_utf8(&self.rom[0x0134..0x0143]).unwrap());
+        println!("ROM Title: {}", title);
     }
 
     pub fn read(&mut self, address: u16) -> u8 {
