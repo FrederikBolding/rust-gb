@@ -139,11 +139,17 @@ impl MMU {
                 self.working_ram[address - SHADOW_WORKING_RAM_START]
             }
             IO_START..=IO_END => match address {
-                0xFF25 => 0, // TODO
+                0xFF00 => 0xFF, // TODO: Joypad
+                0xFF01 => 0,    // TODO
+                0xFF02 => 0,    // TODO
+                0xFF25 => 0,    // TODO
                 0xFF40 => {
                     // TODO
-                    (if self.gpu.background_enabled { 0x01 } else { 0x00 }
-                        | if false { 0x02 } else { 0x00 }
+                    (if self.gpu.background_enabled {
+                        0x01
+                    } else {
+                        0x00
+                    } | if false { 0x02 } else { 0x00 }
                         | if false { 0x04 } else { 0x00 }
                         | if self.gpu.background_map { 0x08 } else { 0x00 }
                         | if self.gpu.background_tile { 0x10 } else { 0x00 }
@@ -162,7 +168,10 @@ impl MMU {
                 0xFF42 => self.gpu.scroll_y,
                 0xFF44 => self.gpu.line,
                 0xFF45 => self.gpu.line_check,
-                _ => todo!("Tried to read from unimplemented IO register 0x{:02x}", address),
+                _ => todo!(
+                    "Tried to read from unimplemented IO register 0x{:02x}",
+                    address
+                ),
             },
             UNUSED_START..=UNUSED_END => 0,
             ZERO_PAGE_START..=ZERO_PAGE_END => self.zero_page_ram[address - ZERO_PAGE_START],
@@ -232,6 +241,15 @@ impl MMU {
                     0xFF42 => self.gpu.scroll_y = value,
                     0xFF43 => self.gpu.scroll_x = value,
                     0xFF45 => self.gpu.line_check = value,
+                    0xFF46 => {
+                        // Direct Memory Access
+                        let source = (value as u16) << 8;
+                        let destination = OAM_START as u16;
+                        for offset in 0..150 {
+                            let byte = self.read(source + offset);
+                            self.write(destination + offset, byte)
+                        }
+                    }
                     0xFF47 => self.gpu.background_palette = value,
                     0xFF50 => self.finish_boot(),
                     _ => println!(

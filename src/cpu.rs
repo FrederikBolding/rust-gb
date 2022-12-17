@@ -883,10 +883,12 @@ fn test_addhl() {
 
     cpu.execute(Instruction::ADDHL(InstructionTarget::BC));
 
-    assert_eq!(cpu.get_instruction_target_word(InstructionTarget::HL), 0x0A00);
+    assert_eq!(
+        cpu.get_instruction_target_word(InstructionTarget::HL),
+        0x0A00
+    );
     assert_eq!(cpu.registers.zero, false);
     assert_eq!(cpu.registers.sub, false);
     assert_eq!(cpu.registers.half_carry, true);
     assert_eq!(cpu.registers.carry, false);
 }
-
