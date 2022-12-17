@@ -142,6 +142,7 @@ impl MMU {
                 0xFF25 => 0, // TODO
                 0xFF42 => self.gpu.scroll_y,
                 0xFF44 => self.gpu.line,
+                0xFF45 => self.gpu.line_check,
                 0xFF41 => {
                     (if self.gpu.hblank_interrupt_enabled { 0x08 } else { 0x00 }
                         | if self.gpu.vblank_interrupt_enabled { 0x10 } else { 0x00 }
@@ -155,6 +156,7 @@ impl MMU {
                     address
                 ),
             },
+            UNUSED_START..=UNUSED_END => 0,
             ZERO_PAGE_START..=ZERO_PAGE_END => self.zero_page_ram[address - ZERO_PAGE_START],
             0xFFFF => {
                 0b11100000
@@ -197,7 +199,9 @@ impl MMU {
                 match address {
                     0xFF40 => {
                         // TODO: A bunch more flags
+                        self.gpu.background_enabled = value & 0x01 == 0x01;
                         self.gpu.background_map = value & 0x08 == 0x08;
+                        self.gpu.background_tile = value & 0x10 == 0x10;
                     }
                     0xFF41 => {
                         self.gpu.vblank_interrupt_enabled = value & 0x08 == 0x08;
@@ -207,6 +211,7 @@ impl MMU {
                     }
                     0xFF42 => self.gpu.scroll_y = value,
                     0xFF43 => self.gpu.scroll_x = value,
+                    0xFF45 => self.gpu.line_check = value,
                     0xFF47 => self.gpu.background_palette = value,
                     0xFF50 => self.finish_boot(),
                     _ => println!(
@@ -239,7 +244,7 @@ impl MMU {
             // RAM enabled flag
             0x0000 | 0x1000 => {
                 // TODO
-                println!("Enable RAM");
+                println!("Enable RAM: {}", (value & 0x0f) == 0x0a);
             }
             // ROM bank selection
             0x2000 => {

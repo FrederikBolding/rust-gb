@@ -18,7 +18,7 @@ use minifb::{Key, Window, WindowOptions};
 use mmu::MMU;
 
 const BIOS_PATH: &str = "./static/bios/dmg_bootix.bin";
-const ROM_PATH: &str = "./static/roms/pocket.gb";
+const ROM_PATH: &str = "./static/roms/cpu_instrs.gb";
 
 fn main() {
     let bios = read(BIOS_PATH).ok().unwrap();

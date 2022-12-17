@@ -66,7 +66,7 @@ impl CPU {
             // TODO: Run interrupt
             if self.mmu.vblank_interrupt_enabled && self.mmu.gpu.vblank_interrupt_flag {
                 self.mmu.gpu.vblank_interrupt_flag = false;
-                return cycles + self.interrupt(0x40);
+                //return cycles + self.interrupt(0x40);
             }
 
             if self.mmu.lcdstat_interrupt_enabled && self.mmu.gpu.lcdstat_interrupt_flag {
@@ -178,7 +178,7 @@ impl CPU {
                 self.registers.zero = value == 0;
                 self.registers.sub = false;
                 self.registers.carry = (value & 0x100) == 0x100;
-                // TODO: Half-carry
+                self.registers.half_carry = ((value1 & 0xF) + (value2 & 0xF)) > 0xF;
                 match target {
                     InstructionTarget::D8 => (self.program_counter.wrapping_add(2), 8),
                     InstructionTarget::HLI => (self.program_counter.wrapping_add(1), 8),
@@ -193,7 +193,8 @@ impl CPU {
                 self.registers.zero = value == 0;
                 self.registers.sub = false;
                 self.registers.carry = (value & 0x10000) == 0x10000;
-                // TODO: Half-carry
+                let mask = 0b111_1111_1111;
+                self.registers.half_carry = (value1 & mask) + (value2 & mask) > mask;
                 self.set_instruction_target_word(InstructionTarget::HL, value as u16);
                 (self.program_counter.wrapping_add(1), 8)
             }
@@ -204,8 +205,8 @@ impl CPU {
                 self.set_instruction_target_word(InstructionTarget::SP, result as u16);
                 self.registers.zero = false;
                 self.registers.sub = false;
-                // TODO: Carry
-                // TODO: Half-carry
+                self.registers.half_carry = (stack_pointer & 0xF) + (value & 0xF) > 0xF;
+                self.registers.carry = (stack_pointer & 0xFF) + (value & 0xFF) > 0xFF;
                 (self.program_counter.wrapping_add(2), 16)
             }
             Instruction::ADC(target) => {
@@ -217,8 +218,9 @@ impl CPU {
                 self.registers.set(RegisterTarget::A, value as u8);
                 self.registers.zero = value == 0;
                 self.registers.sub = false;
+                self.registers.half_carry =
+                    ((value1 & 0xF) + (value2 & 0xF) + self.registers.carry as u32) > 0xF;
                 self.registers.carry = (value & 0x100) == 0x100;
-                // TODO: Half-carry
                 match target {
                     InstructionTarget::D8 => (self.program_counter.wrapping_add(2), 8),
                     InstructionTarget::HLI => (self.program_counter.wrapping_add(1), 8),
@@ -233,7 +235,7 @@ impl CPU {
                 self.registers.zero = value == 0;
                 self.registers.sub = true;
                 self.registers.carry = (value & 0x100) == 0x100;
-                // TODO: Half-carry
+                self.registers.half_carry = (value2 & 0xF) < (value1 & 0xF);
                 match target {
                     InstructionTarget::D8 => (self.program_counter.wrapping_add(2), 8),
                     InstructionTarget::HLI => (self.program_counter.wrapping_add(1), 8),
@@ -249,8 +251,9 @@ impl CPU {
                 self.registers.set(RegisterTarget::A, value as u8);
                 self.registers.zero = value == 0;
                 self.registers.sub = true;
+                self.registers.half_carry =
+                    (value2 & 0xF) < (value1 & 0xF) + self.registers.carry as u32;
                 self.registers.carry = (value & 0x100) == 0x100;
-                // TODO: Half-carry
                 match target {
                     InstructionTarget::D8 => (self.program_counter.wrapping_add(2), 8),
                     InstructionTarget::HLI => (self.program_counter.wrapping_add(1), 8),
@@ -262,15 +265,14 @@ impl CPU {
                     let current_value = self.get_instruction_target_word(target);
                     let value = current_value.wrapping_add(1);
                     self.set_instruction_target_word(target, value);
-                    self.registers.zero = value == 0;
                 } else {
                     let current_value = self.get_instruction_target_byte(target);
                     let value = current_value.wrapping_add(1);
                     self.set_instruction_target_byte(target, value);
                     self.registers.zero = value == 0;
+                    self.registers.half_carry = current_value & 0xF == 0xF;
+                    self.registers.sub = false;
                 }
-                self.registers.sub = false;
-                // TODO: Half-carry
                 let cycles = match target {
                     InstructionTarget::BC
                     | InstructionTarget::DE
@@ -286,15 +288,14 @@ impl CPU {
                     let current_value = self.get_instruction_target_word(target);
                     let value = current_value.wrapping_sub(1);
                     self.set_instruction_target_word(target, value);
-                    self.registers.zero = value == 0;
                 } else {
                     let current_value = self.get_instruction_target_byte(target);
                     let value = current_value.wrapping_sub(1);
                     self.set_instruction_target_byte(target, value);
                     self.registers.zero = value == 0;
+                    self.registers.half_carry = current_value & 0xF == 0xF;
+                    self.registers.sub = true;
                 }
-                self.registers.sub = true;
-                // TODO: Half-carry
                 let cycles = match target {
                     InstructionTarget::BC
                     | InstructionTarget::DE
@@ -419,13 +420,14 @@ impl CPU {
                 }
                 LoadType::HLFromSPN => {
                     let stack_pointer = self.get_instruction_target_word(InstructionTarget::SP);
-                    let value = self.get_instruction_target_byte(InstructionTarget::D8) as i8 as i16 as u16;
+                    let value =
+                        self.get_instruction_target_byte(InstructionTarget::D8) as i8 as i16 as u16;
                     let result = stack_pointer.wrapping_add(value);
                     self.set_instruction_target_word(InstructionTarget::HL, result);
                     self.registers.sub = false;
                     self.registers.zero = false;
-                    // TODO: Carry
-                    // TODO: Half-carry
+                    self.registers.half_carry = (stack_pointer & 0xF) + (value & 0xF) > 0xF;
+                    self.registers.carry = (stack_pointer & 0xFF) + (value & 0xFF) > 0xFF;
                     (self.program_counter.wrapping_add(2), 12)
                 }
             },
@@ -566,7 +568,7 @@ impl CPU {
 
                 self.registers.zero = a_value == target_value;
                 self.registers.sub = true;
-                // TODO: Half-carry
+                self.registers.half_carry = (a_value & 0xF) < (target_value & 0xF);
                 self.registers.carry = a_value < target_value;
 
                 match target {
@@ -757,35 +759,13 @@ impl CPU {
 }
 
 #[test]
-fn test_step() {
-    let mmu = MMU::new();
-    let mut cpu = CPU::new(mmu);
-    cpu.mmu.finish_boot();
-    cpu.mmu.write(0, 0x23); // INC(HL)
-    cpu.mmu.write(1, 0xB5); // OR(L)
-    cpu.mmu.write(2, 0xCB); // PREFIX
-    cpu.mmu.write(3, 0xe8); // SET(B, 5)
-    for _ in 0..=3 {
-        cpu.step();
-    }
-
-    assert_eq!(cpu.registers.h, 0b0);
-    assert_eq!(cpu.registers.l, 0b1);
-    assert_eq!(cpu.registers.a, 0b1);
-    assert_eq!(cpu.registers.b, 0b0010_0000);
-}
-
-#[test]
 fn test_add() {
     let mmu = MMU::new();
     let mut cpu = CPU::new(mmu);
     cpu.mmu.finish_boot();
-    cpu.mmu.write(0, 0x3C); //INC A
-    cpu.mmu.write(1, 0x04); // INC B
-    cpu.mmu.write(2, 0x80); // ADD A,B
-    for _ in 0..=2 {
-        cpu.step();
-    }
+    cpu.execute(Instruction::INC((InstructionTarget::A)));
+    cpu.execute(Instruction::INC((InstructionTarget::B)));
+    cpu.execute(Instruction::ADD((InstructionTarget::B)));
 
     assert_eq!(cpu.registers.a, 2);
     assert_eq!(cpu.registers.b, 1);
@@ -796,11 +776,10 @@ fn test_load_byte() {
     let mmu = MMU::new();
     let mut cpu = CPU::new(mmu);
     cpu.mmu.finish_boot();
-    cpu.mmu.write(0, 0x04); // INC B
-    cpu.mmu.write(1, 0x50); // LD D, B
-    for _ in 0..=1 {
-        cpu.step();
-    }
+    cpu.execute(Instruction::INC((InstructionTarget::B)));
+    cpu.execute(Instruction::LD(
+        (LoadType::Byte((InstructionTarget::D), (InstructionTarget::B))),
+    ));
 
     assert_eq!(cpu.registers.d, 1);
     assert_eq!(cpu.registers.b, 1);
@@ -808,7 +787,8 @@ fn test_load_byte() {
 
 #[test]
 fn test_push_pop() {
-    let mmu = MMU::new();
+    let mut mmu = MMU::new();
+    mmu.load_rom(vec![0; 0xFFFF]);
     let mut cpu = CPU::new(mmu);
     cpu.mmu.finish_boot();
     cpu.registers.b = 0x4;
@@ -828,7 +808,8 @@ fn test_push_pop() {
 
 #[test]
 fn test_jr() {
-    let mmu = MMU::new();
+    let mut mmu = MMU::new();
+    mmu.load_rom(vec![0; 0xFFFF]);
     let mut cpu = CPU::new(mmu);
     cpu.mmu.finish_boot();
     cpu.program_counter = 0xF8;
@@ -877,3 +858,37 @@ fn test_swap() {
     assert_eq!(cpu.registers.half_carry, false);
     assert_eq!(cpu.registers.carry, false);
 }
+
+#[test]
+fn test_rr() {
+    let mmu = MMU::new();
+    let mut cpu = CPU::new(mmu);
+    cpu.mmu.finish_boot();
+    cpu.registers.a = 0b1011_0101;
+
+    cpu.execute(Instruction::RR(InstructionTarget::A));
+
+    assert_eq!(cpu.registers.a, 0b0101_1010);
+    assert_eq!(cpu.registers.zero, false);
+    assert_eq!(cpu.registers.sub, false);
+    assert_eq!(cpu.registers.half_carry, false);
+    assert_eq!(cpu.registers.carry, true);
+}
+
+#[test]
+fn test_addhl() {
+    let mmu = MMU::new();
+    let mut cpu = CPU::new(mmu);
+    cpu.mmu.finish_boot();
+    cpu.registers.b = 0x07;
+    cpu.registers.h = 0x03;
+
+    cpu.execute(Instruction::ADDHL(InstructionTarget::BC));
+
+    assert_eq!(cpu.get_instruction_target_word(InstructionTarget::HL), 0x0A00);
+    assert_eq!(cpu.registers.zero, false);
+    assert_eq!(cpu.registers.sub, false);
+    assert_eq!(cpu.registers.half_carry, true);
+    assert_eq!(cpu.registers.carry, false);
+}
+

@@ -50,13 +50,16 @@ pub struct GPU {
 
     // Active line
     pub line: u8,
+    pub line_check: u8,
 
     // Scroll
     pub scroll_x: u8,
     pub scroll_y: u8,
 
     // Background
+    pub background_enabled: bool,
     pub background_map: bool,
+    pub background_tile: bool,
     pub background_palette: u8,
 }
 
@@ -77,9 +80,12 @@ impl GPU {
             line_equals_line_interrupt_enabled: false,
             lcdstat_interrupt_flag: false,
             line: 0,
+            line_check: 0,
             scroll_x: 0,
             scroll_y: 0,
+            background_enabled: false,
             background_map: false,
+            background_tile: false,
             background_palette: 0,
         }
     }
@@ -97,6 +103,10 @@ impl GPU {
                     self.mode_clock -= 204;
 
                     self.line += 1;
+
+                    if self.line_equals_line_interrupt_enabled && self.line == self.line_check {
+                        self.lcdstat_interrupt_flag = true;
+                    }
 
                     if self.line == 144 {
                         self.mode = GPUMode::VBlank;
@@ -120,6 +130,10 @@ impl GPU {
                 if self.mode_clock >= 456 {
                     self.mode_clock -= 456;
                     self.line += 1;
+
+                    if self.line_equals_line_interrupt_enabled && self.line == self.line_check {
+                        self.lcdstat_interrupt_flag = true;
+                    }
 
                     if self.line == 154 {
                         self.mode = GPUMode::OAMAccess;
@@ -205,36 +219,38 @@ impl GPU {
     }
 
     fn render_scanline(&mut self) {
-        let row_offset = ((((self.line as usize) + (self.scroll_y as usize)) & 0xff) >> 3) % 32;
-        let map_offset: usize =
-            if self.background_map { 0x1C00 } else { 0x1800 } + (row_offset * 32);
+        if self.background_enabled {
+            let row_offset = ((((self.line as usize) + (self.scroll_y as usize)) & 0xff) >> 3) % 32;
+            let map_offset: usize =
+                if self.background_map { 0x1C00 } else { 0x1800 } + (row_offset * 32);
 
-        let mut line_offset = (self.scroll_x >> 3) as usize;
-        let y = ((self.line as usize + self.scroll_y as usize) & 7) as usize;
-        let mut x = (self.scroll_x & 7) as usize;
-        let mut frame_offset = (self.line as usize) * WIDTH * 3;
+            let mut line_offset = (self.scroll_x >> 3) as usize;
+            let y = ((self.line as usize + self.scroll_y as usize) & 7) as usize;
+            let mut x = (self.scroll_x & 7) as usize;
+            let mut frame_offset = (self.line as usize) * WIDTH * 3;
 
-        let mut tile_index = self.vram[map_offset + line_offset] as usize;
-        // Some tiles are indexed using signed indices
-        if !self.background_map && tile_index < 128 {
-            tile_index += 256;
-        }
-
-        for _ in 0..WIDTH {
-            let pixel = self.tileset[tile_index].get(x, y);
-            let color = self.get_palette_color(pixel);
-            self.frame_buffer[frame_offset] = color[0];
-            self.frame_buffer[frame_offset + 1] = color[1];
-            self.frame_buffer[frame_offset + 2] = color[2];
-
-            x += 1;
-            if x == 8 {
-                x = 0;
-                line_offset = (line_offset + 1) % 32;
-                tile_index = self.vram[map_offset + line_offset] as usize;
+            let mut tile_index = self.vram[map_offset + line_offset] as usize;
+            // Some tiles are indexed using signed indices
+            if !self.background_tile && tile_index < 128 {
+                tile_index += 256;
             }
 
-            frame_offset += 3;
+            for _ in 0..WIDTH {
+                let pixel = self.tileset[tile_index].get(x, y);
+                let color = self.get_palette_color(pixel);
+                self.frame_buffer[frame_offset] = color[0];
+                self.frame_buffer[frame_offset + 1] = color[1];
+                self.frame_buffer[frame_offset + 2] = color[2];
+
+                x += 1;
+                if x == 8 {
+                    x = 0;
+                    line_offset = (line_offset + 1) % 32;
+                    tile_index = self.vram[map_offset + line_offset] as usize;
+                }
+
+                frame_offset += 3;
+            }
         }
     }
 }
