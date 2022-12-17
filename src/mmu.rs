@@ -11,7 +11,7 @@
 // FF00-FF7F - Memory-mapped IO
 // FF80-FFFF - Zero-page RAM
 
-use crate::gpu::GPU;
+use crate::gpu::{GPUMode, GPU};
 
 pub const BIOS_START: usize = 0x00;
 pub const BIOS_END: usize = 0xFF;
@@ -140,9 +140,17 @@ impl MMU {
             }
             IO_START..=IO_END => match address {
                 0xFF25 => 0, // TODO
-                0xFF42 => self.gpu.scroll_y,
-                0xFF44 => self.gpu.line,
-                0xFF45 => self.gpu.line_check,
+                0xFF40 => {
+                    // TODO
+                    (if self.gpu.background_enabled { 0x01 } else { 0x00 }
+                        | if false { 0x02 } else { 0x00 }
+                        | if false { 0x04 } else { 0x00 }
+                        | if self.gpu.background_map { 0x08 } else { 0x00 }
+                        | if self.gpu.background_tile { 0x10 } else { 0x00 }
+                        | if false { 0x20 } else { 0x00 }
+                        | if false { 0x40 } else { 0x00 }
+                        | if self.gpu.lcd_enabled { 0x80 } else { 0x00 })
+                }
                 0xFF41 => {
                     (if self.gpu.hblank_interrupt_enabled { 0x08 } else { 0x00 }
                         | if self.gpu.vblank_interrupt_enabled { 0x10 } else { 0x00 }
@@ -151,10 +159,10 @@ impl MMU {
                         | if false { 0x04 } else { 0x00 } // TODO
                         | (self.gpu.mode as u8 & 0x03))
                 }
-                _ => todo!(
-                    "Tried to read from unimplemented IO register 0x{:02x}",
-                    address
-                ),
+                0xFF42 => self.gpu.scroll_y,
+                0xFF44 => self.gpu.line,
+                0xFF45 => self.gpu.line_check,
+                _ => todo!("Tried to read from unimplemented IO register 0x{:02x}", address),
             },
             UNUSED_START..=UNUSED_END => 0,
             ZERO_PAGE_START..=ZERO_PAGE_END => self.zero_page_ram[address - ZERO_PAGE_START],
@@ -202,6 +210,18 @@ impl MMU {
                         self.gpu.background_enabled = value & 0x01 == 0x01;
                         self.gpu.background_map = value & 0x08 == 0x08;
                         self.gpu.background_tile = value & 0x10 == 0x10;
+                        self.gpu.lcd_enabled = value & 0x80 == 0x80;
+
+                        println!("LCD enabled {}", self.gpu.lcd_enabled);
+
+                        if !self.gpu.lcd_enabled {
+                            self.gpu.mode = GPUMode::HBlank;
+                            self.gpu.mode_clock = 0;
+                            self.gpu.line = 0;
+                            self.gpu.vblank_interrupt_flag = false;
+                            self.gpu.lcdstat_interrupt_flag = false;
+                            self.gpu.clear_frame_buffer();
+                        }
                     }
                     0xFF41 => {
                         self.gpu.vblank_interrupt_enabled = value & 0x08 == 0x08;
@@ -251,7 +271,13 @@ impl MMU {
                 println!("Setting ROM bank 0x{:2x} to {:?}", address, value);
                 self.rom_bank = value;
             }
-            _ => panic!("Writing to unimplemented rom location"),
+            0x4000 | 0x5000 => {
+                println!("Setting RAM bank 0x{:2x} to {:?}", address, value);
+            }
+            _ => panic!(
+                "Writing to unimplemented rom location 0x{:2x} 0x{:2x}",
+                address, value
+            ),
         }
     }
 }

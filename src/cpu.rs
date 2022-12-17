@@ -71,7 +71,7 @@ impl CPU {
 
             if self.mmu.lcdstat_interrupt_enabled && self.mmu.gpu.lcdstat_interrupt_flag {
                 self.mmu.gpu.lcdstat_interrupt_flag = false;
-                return cycles + self.interrupt(0x48);
+                //return cycles + self.interrupt(0x48);
             }
         }
 
@@ -188,14 +188,12 @@ impl CPU {
             Instruction::ADDHL(target) => {
                 let value1 = self.get_instruction_target_word(target) as u32;
                 let value2 = self.get_instruction_target_word(InstructionTarget::HL) as u32;
-                let value = value1.wrapping_add(value2);
-                self.registers.set(RegisterTarget::A, value as u8);
-                self.registers.zero = value == 0;
+                let result = value1.wrapping_add(value2);
                 self.registers.sub = false;
-                self.registers.carry = (value & 0x10000) == 0x10000;
+                self.registers.carry = (result & 0x10000) == 0x10000;
                 let mask = 0b111_1111_1111;
                 self.registers.half_carry = (value1 & mask) + (value2 & mask) > mask;
-                self.set_instruction_target_word(InstructionTarget::HL, value as u16);
+                self.set_instruction_target_word(InstructionTarget::HL, result as u16);
                 (self.program_counter.wrapping_add(1), 8)
             }
             Instruction::ADDSP => {

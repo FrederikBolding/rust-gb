@@ -36,8 +36,10 @@ pub struct GPU {
     pub oam: [u8; OAM_SIZE],
     tileset: [Tile; TILE_COUNT],
 
-    mode_clock: u16,
+    pub mode_clock: u16,
     pub mode: GPUMode,
+
+    pub lcd_enabled: bool,
 
     // Interrupts
     pub vblank_interrupt_flag: bool,
@@ -73,6 +75,7 @@ impl GPU {
             tileset: [Tile { data: [0; 64] }; TILE_COUNT],
             mode_clock: 0,
             mode: GPUMode::OAMAccess,
+            lcd_enabled: false,
             vblank_interrupt_enabled: false,
             vblank_interrupt_flag: false,
             oam_interrupt_enabled: false,
@@ -94,7 +97,18 @@ impl GPU {
         self.flush_frame_buffer = false;
     }
 
+    pub fn clear_frame_buffer(&mut self) {
+        for index in 0..self.frame_buffer.len() {
+            self.frame_buffer[index] = 0;
+        }
+        self.flush_frame_buffer = true;
+    }
+
     pub fn step(&mut self, cycles: u8) {
+        if !self.lcd_enabled {
+            return;
+        }
+
         self.mode_clock += cycles as u16;
 
         match self.mode {
