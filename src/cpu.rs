@@ -226,13 +226,13 @@ impl CPU {
                 }
             }
             Instruction::SUB(target) => {
-                let value1 = self.get_instruction_target_byte(target) as u32;
-                let value2 = self.registers.get(RegisterTarget::A) as u32;
-                let value = value1.wrapping_sub(value2);
-                self.registers.set(RegisterTarget::A, value as u8);
-                self.registers.zero = value == 0;
+                let value1 = self.get_instruction_target_byte(InstructionTarget::A) as u32;
+                let value2 = self.get_instruction_target_byte(target) as u32;
+                let result = value1.wrapping_sub(value2);
+                self.registers.set(RegisterTarget::A, result as u8);
+                self.registers.zero = result == 0;
                 self.registers.sub = true;
-                self.registers.carry = (value & 0x100) == 0x100;
+                self.registers.carry = (result & 0x100) == 0x100;
                 self.registers.half_carry = (value2 & 0xF) < (value1 & 0xF);
                 match target {
                     InstructionTarget::D8 => (self.program_counter.wrapping_add(2), 8),
@@ -747,6 +747,37 @@ impl CPU {
                 self.set_instruction_target_byte(InstructionTarget::A, !value);
                 self.registers.sub = true;
                 self.registers.half_carry = true;
+                (self.program_counter.wrapping_add(1), 4)
+            }
+            Instruction::DAA => {
+                let value = self.get_instruction_target_byte(InstructionTarget::A);
+
+                let mut adjust = 0;
+                if self.registers.half_carry {
+                    adjust |= 0x06;
+                }
+                if self.registers.carry {
+                    adjust |= 0x60;
+                }
+
+                let result = if self.registers.sub {
+                    value.wrapping_sub(adjust)
+                } else {
+                    if value & 0x0f > 0x09 {
+                        adjust |= 0x06;
+                    }
+
+                    if value > 0x99 {
+                        adjust |= 0x60;
+                    }
+
+                    value.wrapping_add(adjust)
+                };
+
+                self.set_instruction_target_byte(InstructionTarget::A, result);
+                self.registers.zero = result == 0;
+                self.registers.carry = adjust & 0x60 == 0x60;
+                self.registers.half_carry = false;
                 (self.program_counter.wrapping_add(1), 4)
             }
             _ => {
