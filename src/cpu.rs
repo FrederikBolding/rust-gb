@@ -52,8 +52,8 @@ impl CPU {
         } else {
             byte
         };
-        //println!("{:?} Byte: 0x{:02x} ({:?})", self.program_counter, instruction_byte, is_prefixed);
         let instruction = Instruction::from_byte(instruction_byte, is_prefixed).unwrap();
+        //println!("{:?} Byte: 0x{:02x} {:?} ({:?})", self.program_counter, instruction_byte, instruction, is_prefixed);
         //println!("Instruction {:?}", instruction);
         let (next_program_counter, cycles) = self.execute(instruction);
         self.mmu.step(cycles);
@@ -701,7 +701,11 @@ impl CPU {
                 self.registers.sub = false;
                 self.registers.half_carry = false;
                 self.registers.carry = (value & 0x1) == 0x1;
-                (self.program_counter.wrapping_add(1), 4)
+                let cycles = match target {
+                    InstructionTarget::HLI => 16,
+                    _ => 8,
+                };
+                (self.program_counter.wrapping_add(2), cycles)
             }
             Instruction::RLCA => {
                 let value = self.get_instruction_target_byte(InstructionTarget::A);
