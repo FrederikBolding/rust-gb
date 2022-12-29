@@ -53,8 +53,7 @@ impl CPU {
             byte
         };
         let instruction = Instruction::from_byte(instruction_byte, is_prefixed).unwrap();
-        //println!("{:?} Byte: 0x{:02x} {:?} ({:?})", self.program_counter, instruction_byte, instruction, is_prefixed);
-        //println!("Instruction {:?}", instruction);
+        //println!("{:?} 0x{:02x} {:?} ({:?})", self.program_counter, instruction_byte, instruction, is_prefixed);
         let (next_program_counter, cycles) = self.execute(instruction);
         self.mmu.step(cycles);
 
@@ -172,12 +171,13 @@ impl CPU {
             }
             Instruction::ADD(target) => {
                 let value1 = self.get_instruction_target_byte(target) as u32;
-                let value2 = self.registers.get(RegisterTarget::A) as u32;
-                let value = value1.wrapping_add(value2);
-                self.registers.set(RegisterTarget::A, value as u8);
-                self.registers.zero = value == 0;
+                let value2 = self.get_instruction_target_byte(InstructionTarget::A) as u32;
+                let result = value1.wrapping_add(value2);
+                let result_byte = result as u8;
+                self.set_instruction_target_byte(InstructionTarget::A, result_byte);
+                self.registers.zero = result_byte == 0;
                 self.registers.sub = false;
-                self.registers.carry = (value & 0x100) == 0x100;
+                self.registers.carry = (result & 0x100) == 0x100;
                 self.registers.half_carry = ((value1 & 0xF) + (value2 & 0xF)) > 0xF;
                 match target {
                     InstructionTarget::D8 => (self.program_counter.wrapping_add(2), 8),
@@ -209,16 +209,17 @@ impl CPU {
             }
             Instruction::ADC(target) => {
                 let value1 = self.get_instruction_target_byte(target) as u32;
-                let value2 = self.registers.get(RegisterTarget::A) as u32;
-                let value = value1
+                let value2 = self.get_instruction_target_byte(InstructionTarget::A) as u32;
+                let result = value1
                     .wrapping_add(value2)
                     .wrapping_add(self.registers.carry as u32);
-                self.registers.set(RegisterTarget::A, value as u8);
-                self.registers.zero = value == 0;
+                let result_byte = result as u8;
+                self.set_instruction_target_byte(InstructionTarget::A, result_byte);
+                self.registers.zero = result_byte == 0;
                 self.registers.sub = false;
                 self.registers.half_carry =
                     ((value1 & 0xF) + (value2 & 0xF) + self.registers.carry as u32) > 0xF;
-                self.registers.carry = (value & 0x100) == 0x100;
+                self.registers.carry = (result & 0x100) == 0x100;
                 match target {
                     InstructionTarget::D8 => (self.program_counter.wrapping_add(2), 8),
                     InstructionTarget::HLI => (self.program_counter.wrapping_add(1), 8),
@@ -229,8 +230,9 @@ impl CPU {
                 let value1 = self.get_instruction_target_byte(InstructionTarget::A) as u32;
                 let value2 = self.get_instruction_target_byte(target) as u32;
                 let result = value1.wrapping_sub(value2);
-                self.registers.set(RegisterTarget::A, result as u8);
-                self.registers.zero = result == 0;
+                let result_byte = result as u8;
+                self.set_instruction_target_byte(InstructionTarget::A, result_byte);
+                self.registers.zero = result_byte == 0;
                 self.registers.sub = true;
                 self.registers.carry = (result & 0x100) == 0x100;
                 self.registers.half_carry = (value2 & 0xF) < (value1 & 0xF);
@@ -242,16 +244,17 @@ impl CPU {
             }
             Instruction::SBC(target) => {
                 let value1 = self.get_instruction_target_byte(target) as u32;
-                let value2 = self.registers.get(RegisterTarget::A) as u32;
-                let value = value1
+                let value2 = self.get_instruction_target_byte(InstructionTarget::A) as u32;
+                let result = value1
                     .wrapping_sub(value2)
                     .wrapping_sub(self.registers.carry as u32);
-                self.registers.set(RegisterTarget::A, value as u8);
-                self.registers.zero = value == 0;
+                let result_byte = result as u8;
+                self.set_instruction_target_byte(InstructionTarget::A, result_byte);
+                self.registers.zero = result_byte == 0;
                 self.registers.sub = true;
                 self.registers.half_carry =
                     (value2 & 0xF) < (value1 & 0xF) + self.registers.carry as u32;
-                self.registers.carry = (value & 0x100) == 0x100;
+                self.registers.carry = (result & 0x100) == 0x100;
                 match target {
                     InstructionTarget::D8 => (self.program_counter.wrapping_add(2), 8),
                     InstructionTarget::HLI => (self.program_counter.wrapping_add(1), 8),
