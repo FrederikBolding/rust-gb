@@ -493,7 +493,6 @@ impl CPU {
                 // Use bitmask to reset specific bit
                 let result = value & !(1u8 << (bit_position as u8));
                 self.set_instruction_target_byte(target, result);
-                self.set_instruction_target_byte(target, result);
                 let cycles = match target {
                     InstructionTarget::HLI => 16,
                     _ => 8,
@@ -506,7 +505,6 @@ impl CPU {
                 self.registers.zero = result == 0;
                 self.registers.sub = false;
                 self.registers.half_carry = true;
-                self.set_instruction_target_byte(target, result);
                 let cycles = match target {
                     InstructionTarget::HLI => 16,
                     _ => 8,

@@ -176,6 +176,7 @@ pub enum Instruction {
     NOP,
     DI,
     EI,
+    STOP
 }
 
 impl Instruction {
@@ -997,6 +998,7 @@ impl Instruction {
             0x76 => Some(Instruction::HALT),
             0xf3 => Some(Instruction::DI),
             0xfb => Some(Instruction::EI),
+            0x10 => Some(Instruction::STOP),
 
             _ => None,
         }
