@@ -65,12 +65,12 @@ impl CPU {
             // TODO: Run interrupt
             if self.mmu.vblank_interrupt_enabled && self.mmu.gpu.vblank_interrupt_flag {
                 self.mmu.gpu.vblank_interrupt_flag = false;
-                //return cycles + self.interrupt(0x40);
+                return cycles + self.interrupt(0x40);
             }
 
             if self.mmu.lcdstat_interrupt_enabled && self.mmu.gpu.lcdstat_interrupt_flag {
                 self.mmu.gpu.lcdstat_interrupt_flag = false;
-                //return cycles + self.interrupt(0x48);
+                return cycles + self.interrupt(0x48);
             }
         }
 
