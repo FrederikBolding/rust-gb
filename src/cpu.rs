@@ -744,6 +744,12 @@ impl CPU {
                 self.registers.carry = true;
                 (self.program_counter.wrapping_add(1), 4)
             }
+            Instruction::CCF => {
+                self.registers.sub = false;
+                self.registers.half_carry = false;
+                self.registers.carry = !self.registers.carry;
+                (self.program_counter.wrapping_add(1), 4)
+            }
             Instruction::DI => {
                 self.interrupts_enabled = false;
                 (self.program_counter.wrapping_add(1), 4)
