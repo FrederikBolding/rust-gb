@@ -58,6 +58,13 @@ pub struct GPU {
     pub scroll_x: u8,
     pub scroll_y: u8,
 
+    // Window
+    pub window_enabled: bool,
+    pub window_map: bool,
+    pub window_x: u8,
+    pub window_y: u8,
+    pub window_counter: u8,
+
     // Background
     pub background_enabled: bool,
     pub background_map: bool,
@@ -86,6 +93,11 @@ impl GPU {
             line_check: 0,
             scroll_x: 0,
             scroll_y: 0,
+            window_enabled: false,
+            window_map: false,
+            window_x: 0,
+            window_y: 0,
+            window_counter: 0,
             background_enabled: false,
             background_map: false,
             background_tile: false,
@@ -115,6 +127,14 @@ impl GPU {
             GPUMode::HBlank => {
                 if self.mode_clock >= 204 {
                     self.mode_clock -= 204;
+
+                    if self.window_enabled
+                        && self.window_x as i16 - 7 < WIDTH as i16
+                        && self.window_y < HEIGHT as u8
+                        && self.line >= self.window_y
+                    {
+                        self.window_counter += 1;
+                    }
 
                     self.line += 1;
 
@@ -155,6 +175,7 @@ impl GPU {
                             self.lcdstat_interrupt_flag = true;
                         }
                         self.line = 0;
+                        self.window_counter = 0;
                     }
                 }
             }
@@ -234,22 +255,37 @@ impl GPU {
 
     fn render_scanline(&mut self) {
         if self.background_enabled {
-            let row_offset = ((((self.line as usize) + (self.scroll_y as usize)) & 0xff) >> 3) % 32;
-            let map_offset: usize =
-                if self.background_map { 0x1C00 } else { 0x1800 } + (row_offset * 32);
+            self.render_map(
+                self.background_map,
+                self.scroll_x,
+                self.scroll_y,
+                0,
+                self.line,
+            );
+        }
+        if self.window_enabled && self.line >= self.window_y {
+            self.render_map(self.window_map, 0, 0, self.window_x, self.window_counter);
+        }
+    }
 
-            let mut line_offset = (self.scroll_x >> 3) as usize;
-            let y = ((self.line as usize + self.scroll_y as usize) & 7) as usize;
-            let mut x = (self.scroll_x & 7) as usize;
-            let mut frame_offset = (self.line as usize) * WIDTH * 3;
+    // TODO: Clean this up
+    fn render_map(&mut self, map: bool, scroll_x: u8, scroll_y: u8, window_x: u8, line: u8) {
+        let row_offset = ((((self.line as usize) + (scroll_y as usize)) & 0xff) >> 3) % 32;
+        let map_offset: usize = if map { 0x1C00 } else { 0x1800 } + (row_offset * 32);
 
-            let mut tile_index = self.vram[map_offset + line_offset] as usize;
-            // Some tiles are indexed using signed indices
-            if !self.background_tile && tile_index < 128 {
-                tile_index += 256;
-            }
+        let mut line_offset = (scroll_x >> 3) as usize;
+        let y = ((line as usize + scroll_y as usize) & 7) as usize;
+        let mut x = (scroll_x & 7) as usize;
+        let mut frame_offset = (line as usize) * WIDTH * 3;
 
-            for _ in 0..WIDTH {
+        let mut tile_index = self.vram[map_offset + line_offset] as usize;
+        // Some tiles are indexed using signed indices
+        if !self.background_tile && tile_index < 128 {
+            tile_index += 256;
+        }
+
+        for index in 0..WIDTH {
+            if index as i16 >= window_x as i16 - 7 {
                 let pixel = self.tileset[tile_index].get(x, y);
                 let color = self.get_palette_color(pixel);
                 self.frame_buffer[frame_offset] = color[0];
@@ -261,10 +297,13 @@ impl GPU {
                     x = 0;
                     line_offset = (line_offset + 1) % 32;
                     tile_index = self.vram[map_offset + line_offset] as usize;
+                    if !self.background_tile && tile_index < 128 {
+                        tile_index += 256;
+                    }
                 }
-
-                frame_offset += 3;
             }
+
+            frame_offset += 3;
         }
     }
 }

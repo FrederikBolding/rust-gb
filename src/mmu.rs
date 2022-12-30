@@ -153,8 +153,8 @@ impl MMU {
                         | if false { 0x04 } else { 0x00 }
                         | if self.gpu.background_map { 0x08 } else { 0x00 }
                         | if self.gpu.background_tile { 0x10 } else { 0x00 }
-                        | if false { 0x20 } else { 0x00 }
-                        | if false { 0x40 } else { 0x00 }
+                        | if self.gpu.window_enabled { 0x20 } else { 0x00 }
+                        | if self.gpu.window_map { 0x40 } else { 0x00 }
                         | if self.gpu.lcd_enabled { 0x80 } else { 0x00 })
                 }
                 0xFF41 => {
@@ -168,6 +168,8 @@ impl MMU {
                 0xFF42 => self.gpu.scroll_y,
                 0xFF44 => self.gpu.line,
                 0xFF45 => self.gpu.line_check,
+                0xFF4A => self.gpu.window_y,
+                0xFF4B => self.gpu.window_x,
                 _ => todo!(
                     "Tried to read from unimplemented IO register 0x{:02x}",
                     address
@@ -219,6 +221,8 @@ impl MMU {
                         self.gpu.background_enabled = value & 0x01 == 0x01;
                         self.gpu.background_map = value & 0x08 == 0x08;
                         self.gpu.background_tile = value & 0x10 == 0x10;
+                        self.gpu.window_enabled = value & 0x20 == 0x20;
+                        self.gpu.window_map = value & 0x40 == 0x40;
                         self.gpu.lcd_enabled = value & 0x80 == 0x80;
 
                         println!("LCD enabled {}", self.gpu.lcd_enabled);
@@ -250,6 +254,8 @@ impl MMU {
                             self.write(destination + offset, byte)
                         }
                     }
+                    0xFF4A => self.gpu.window_y = value,
+                    0xFF4B => self.gpu.window_x = value,
                     0xFF47 => self.gpu.background_palette = value,
                     0xFF50 => self.finish_boot(),
                     _ => println!(
