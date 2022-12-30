@@ -62,24 +62,29 @@ impl CPU {
         }
 
         if self.interrupts_enabled {
-            // TODO: Run interrupt
             if self.mmu.vblank_interrupt_enabled && self.mmu.gpu.vblank_interrupt_flag {
                 self.mmu.gpu.vblank_interrupt_flag = false;
-                return cycles + self.interrupt(0x40);
+                return cycles + self.interrupt(next_program_counter, 0x40);
             }
 
             if self.mmu.lcdstat_interrupt_enabled && self.mmu.gpu.lcdstat_interrupt_flag {
                 self.mmu.gpu.lcdstat_interrupt_flag = false;
-                return cycles + self.interrupt(0x48);
+                return cycles + self.interrupt(next_program_counter, 0x48);
+            }
+
+            if self.mmu.joypad_interrupt_enabled && self.mmu.joypad.interrupt_flag {
+                self.mmu.joypad.interrupt_flag = false;
+                return cycles + self.interrupt(next_program_counter, 0x60);
             }
         }
 
         cycles
     }
 
-    fn interrupt(&mut self, address: u16) -> u8 {
+    fn interrupt(&mut self, next_program_counter: u16, address: u16) -> u8 {
+        self.halted = false;
         self.interrupts_enabled = false;
-        self.push(self.program_counter);
+        self.push(next_program_counter);
         self.program_counter = address;
         self.mmu.step(12);
         12

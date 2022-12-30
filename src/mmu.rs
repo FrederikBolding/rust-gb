@@ -11,7 +11,7 @@
 // FF00-FF7F - Memory-mapped IO
 // FF80-FFFF - Zero-page RAM
 
-use crate::gpu::{GPUMode, GPU};
+use crate::{gpu::{GPUMode, GPU}, joypad::Joypad};
 
 pub const BIOS_START: usize = 0x00;
 pub const BIOS_END: usize = 0xFF;
@@ -56,6 +56,7 @@ pub const ZERO_PAGE_SIZE: usize = ZERO_PAGE_END - ZERO_PAGE_START + 1;
 pub struct MMU {
     booting: bool,
     pub gpu: GPU,
+    pub joypad: Joypad,
     bios: [u8; BIOS_SIZE],
     rom: Vec<u8>,
     external_ram: [u8; EXTERNAL_RAM_SIZE],
@@ -75,6 +76,7 @@ impl MMU {
         Self {
             booting: true,
             gpu: GPU::new(),
+            joypad: Joypad::new(),
             bios: [0; BIOS_SIZE],
             rom: vec![0; 0],
             external_ram: [0; EXTERNAL_RAM_SIZE],
@@ -139,7 +141,7 @@ impl MMU {
                 self.working_ram[address - SHADOW_WORKING_RAM_START]
             }
             IO_START..=IO_END => match address {
-                0xFF00 => 0xFF, // TODO: Joypad
+                0xFF00 => self.joypad.to_byte(),
                 0xFF01 => 0,    // TODO
                 0xFF02 => 0,    // TODO
                 0xFF25 => 0,    // TODO
@@ -166,6 +168,7 @@ impl MMU {
                         | (self.gpu.mode as u8 & 0x03))
                 }
                 0xFF42 => self.gpu.scroll_y,
+                0xFF43 => self.gpu.scroll_x,
                 0xFF44 => self.gpu.line,
                 0xFF45 => self.gpu.line_check,
                 0xFF4A => self.gpu.window_y,
@@ -216,6 +219,7 @@ impl MMU {
             IO_START..=IO_END => {
                 // TODO
                 match address {
+                    0xFF00 => self.joypad.column = value & 0x20 == 0,
                     0xFF40 => {
                         // TODO: A bunch more flags
                         self.gpu.background_enabled = value & 0x01 == 0x01;

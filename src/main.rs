@@ -5,6 +5,7 @@ mod gpu;
 mod instruction;
 mod mmu;
 mod registers;
+mod joypad;
 
 use std::{
     fs::read,
@@ -51,6 +52,9 @@ fn main() {
         while cycles_run <= delta_cycles as usize {
             cycles_run += cpu.step() as usize;
         }
+
+        window.get_keys_pressed(minifb::KeyRepeat::Yes).iter().for_each(|key| cpu.mmu.joypad.on_key_down(*key));
+        window.get_keys_released().iter().for_each(|key| cpu.mmu.joypad.on_key_up(*key));
 
         if cpu.mmu.gpu.flush_frame_buffer {
             for (i, pixel) in cpu.mmu.gpu.frame_buffer.chunks(3).enumerate() {
