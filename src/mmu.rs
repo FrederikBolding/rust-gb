@@ -68,7 +68,7 @@ pub struct MMU {
     pub lcdstat_interrupt_enabled: bool,
     pub timer_interrupt_enabled: bool,  // TODO
     pub serial_interrupt_enabled: bool, // TODO
-    pub joypad_interrupt_enabled: bool, // TODO
+    pub joypad_interrupt_enabled: bool,
 }
 
 impl MMU {
@@ -146,13 +146,12 @@ impl MMU {
                 0xFF02 => 0,    // TODO
                 0xFF25 => 0,    // TODO
                 0xFF40 => {
-                    // TODO
                     (if self.gpu.background_enabled {
                         0x01
                     } else {
                         0x00
-                    } | if false { 0x02 } else { 0x00 }
-                        | if false { 0x04 } else { 0x00 }
+                    } | if self.gpu.objects_enabled { 0x02 } else { 0x00 }
+                        | if self.gpu.objects_size { 0x04 } else { 0x00 }
                         | if self.gpu.background_map { 0x08 } else { 0x00 }
                         | if self.gpu.background_tile { 0x10 } else { 0x00 }
                         | if self.gpu.window_enabled { 0x20 } else { 0x00 }
@@ -164,7 +163,7 @@ impl MMU {
                         | if self.gpu.vblank_interrupt_enabled { 0x10 } else { 0x00 }
                         | if self.gpu.oam_interrupt_enabled { 0x20 } else { 0x00 }
                         | if self.gpu.line_equals_line_interrupt_enabled { 0x40 } else { 0x00 }
-                        | if false { 0x04 } else { 0x00 } // TODO
+                        | if self.gpu.line == self.gpu.line_check { 0x04 } else { 0x00 }
                         | (self.gpu.mode as u8 & 0x03))
                 }
                 0xFF42 => self.gpu.scroll_y,
@@ -221,15 +220,14 @@ impl MMU {
                 match address {
                     0xFF00 => self.joypad.column = value & 0x20 == 0,
                     0xFF40 => {
-                        // TODO: A bunch more flags
                         self.gpu.background_enabled = value & 0x01 == 0x01;
+                        self.gpu.objects_enabled = value & 0x02 == 0x02;
+                        self.gpu.objects_size = value & 0x04 == 0x04;
                         self.gpu.background_map = value & 0x08 == 0x08;
                         self.gpu.background_tile = value & 0x10 == 0x10;
                         self.gpu.window_enabled = value & 0x20 == 0x20;
                         self.gpu.window_map = value & 0x40 == 0x40;
                         self.gpu.lcd_enabled = value & 0x80 == 0x80;
-
-                        println!("LCD enabled {}", self.gpu.lcd_enabled);
 
                         if !self.gpu.lcd_enabled {
                             self.gpu.mode = GPUMode::HBlank;
@@ -261,6 +259,8 @@ impl MMU {
                     0xFF4A => self.gpu.window_y = value,
                     0xFF4B => self.gpu.window_x = value,
                     0xFF47 => self.gpu.background_palette = value,
+                    0xFF48 => self.gpu.objects_palette_0 = value,
+                    0xFF49 => self.gpu.objects_palette_1 = value,
                     0xFF50 => self.finish_boot(),
                     _ => println!(
                         "Wrote to unimplemented IO register 0x{:02x} 0x{:02x}",

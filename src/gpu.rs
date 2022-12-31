@@ -4,7 +4,9 @@ pub const WIDTH: usize = 160;
 pub const HEIGHT: usize = 144;
 
 pub const FRAME_BUFFER_SIZE: usize = WIDTH * HEIGHT * 3;
+pub const COLOR_BUFFER_SIZE: usize = WIDTH * HEIGHT;
 pub const TILE_COUNT: usize = 384;
+pub const OBJECT_COUNT: usize = 40;
 
 #[derive(Clone, Copy)]
 pub struct Tile {
@@ -19,6 +21,21 @@ impl Tile {
     pub fn set(&mut self, x: usize, y: usize, value: u8) {
         self.data[y * 8 + x] = value;
     }
+
+    pub fn get_row(&self, y: usize) -> &[u8] {
+        &self.data[y * 8..(y + 1) * 8]
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct Object {
+    x: i16,
+    y: i16,
+    tile: u8,
+    palette: bool,
+    flip_x: bool,
+    flip_y: bool,
+    priority: bool,
 }
 
 #[derive(Copy, Clone, Debug, PartialEq)]
@@ -32,9 +49,11 @@ pub enum GPUMode {
 pub struct GPU {
     pub flush_frame_buffer: bool,
     pub frame_buffer: [u8; FRAME_BUFFER_SIZE],
+    color_buffer: [u8; COLOR_BUFFER_SIZE],
     pub vram: [u8; VRAM_SIZE],
     pub oam: [u8; OAM_SIZE],
     tileset: [Tile; TILE_COUNT],
+    objects: [Object; OBJECT_COUNT],
 
     pub mode_clock: u16,
     pub mode: GPUMode,
@@ -70,6 +89,12 @@ pub struct GPU {
     pub background_map: bool,
     pub background_tile: bool,
     pub background_palette: u8,
+
+    // Objects
+    pub objects_enabled: bool,
+    pub objects_size: bool,
+    pub objects_palette_0: u8,
+    pub objects_palette_1: u8,
 }
 
 impl GPU {
@@ -77,9 +102,19 @@ impl GPU {
         Self {
             flush_frame_buffer: false,
             frame_buffer: [0; FRAME_BUFFER_SIZE],
+            color_buffer: [0; COLOR_BUFFER_SIZE],
             vram: [0; VRAM_SIZE],
             oam: [0; OAM_SIZE],
             tileset: [Tile { data: [0; 64] }; TILE_COUNT],
+            objects: [Object {
+                x: 0,
+                y: 0,
+                tile: 0,
+                flip_x: false,
+                flip_y: false,
+                palette: false,
+                priority: false,
+            }; OBJECT_COUNT],
             mode_clock: 0,
             mode: GPUMode::OAMAccess,
             lcd_enabled: false,
@@ -102,6 +137,10 @@ impl GPU {
             background_map: false,
             background_tile: false,
             background_palette: 0,
+            objects_enabled: false,
+            objects_size: false,
+            objects_palette_0: 0,
+            objects_palette_1: 0
         }
     }
 
@@ -209,6 +248,8 @@ impl GPU {
 
     pub fn write_oam(&mut self, address: usize, value: u8) {
         self.oam[address] = value;
+
+        self.update_object(address, value);
     }
 
     fn update_tile(&mut self, address: usize, _value: u8) {
@@ -232,11 +273,34 @@ impl GPU {
         }
     }
 
-    fn get_palette_color(&self, pixel: u8) -> [u8; 3] {
-        let a = self.background_palette & 0b11;
-        let b = (self.background_palette >> 2) & 0b11;
-        let c = (self.background_palette >> 4) & 0b11;
-        let d = self.background_palette >> 6;
+    fn update_object(&mut self, address: usize, value: u8) {
+        let index = address / 4;
+        if index > OBJECT_COUNT {
+            return;
+        }
+
+        let byte = address % 4;
+
+        let mut object = self.objects[index];
+
+        match byte {
+            0 => object.y = (value as i16) - 0x10,
+            1 => object.x = (value as i16) - 0x8,
+            2 => object.tile = value,
+            _ => {
+                object.palette = (value & 0x10) != 0;
+                object.flip_x = (value & 0x20) != 0;
+                object.flip_y = (value & 0x40) != 0;
+                object.priority = (value & 0x80) == 0;
+            }
+        }
+    }
+
+    fn get_palette_color(&self, palette: u8, pixel: u8) -> [u8; 3] {
+        let a = palette & 0b11;
+        let b = (palette >> 2) & 0b11;
+        let c = (palette >> 4) & 0b11;
+        let d = palette >> 6;
         let index = match pixel {
             0 => a,
             1 => b,
@@ -266,6 +330,10 @@ impl GPU {
         if self.window_enabled && self.line >= self.window_y {
             self.render_map(self.window_map, 0, 0, self.window_x, self.window_counter);
         }
+
+        if self.objects_enabled {
+            self.render_objects();
+        }
     }
 
     // TODO: Clean this up
@@ -276,6 +344,7 @@ impl GPU {
         let mut line_offset = (scroll_x >> 3) as usize;
         let y = ((line as usize + scroll_y as usize) & 7) as usize;
         let mut x = (scroll_x & 7) as usize;
+        let mut color_offset = (line as usize) * WIDTH;
         let mut frame_offset = (line as usize) * WIDTH * 3;
 
         let mut tile_index = self.vram[map_offset + line_offset] as usize;
@@ -287,7 +356,8 @@ impl GPU {
         for index in 0..WIDTH {
             if index as i16 >= window_x as i16 - 7 {
                 let pixel = self.tileset[tile_index].get(x, y);
-                let color = self.get_palette_color(pixel);
+                let color = self.get_palette_color(self.background_palette, pixel);
+                self.color_buffer[color_offset] = pixel;
                 self.frame_buffer[frame_offset] = color[0];
                 self.frame_buffer[frame_offset + 1] = color[1];
                 self.frame_buffer[frame_offset + 2] = color[2];
@@ -303,7 +373,76 @@ impl GPU {
                 }
             }
 
+            color_offset += 1;
             frame_offset += 3;
+        }
+    }
+
+    // TODO: Clean this up
+    fn render_objects(&mut self) {
+        let mut index_buffer = [-256i16; WIDTH];
+        let object_height = if self.objects_size { 16 } else { 8 };
+        let line = self.line as i16;
+        for index in 0..OBJECT_COUNT {
+            let object = self.objects[index];
+
+            if !((object.y <= line) && ((object.y + object_height as i16) > line)) {
+                continue;
+            }
+
+            let palette = if object.palette {
+                self.objects_palette_1
+            } else {
+                self.objects_palette_0
+            };
+
+            let mut color_offset = self.line as i32 * WIDTH as i32 + object.x as i32;
+            let mut frame_offset = (self.line as i32 * WIDTH as i32 + object.x as i32) * 3 as i32;
+            let mut tile_offset = line - object.y;
+
+            if object.flip_y {
+                tile_offset = object_height as i16 - tile_offset - 1;
+            }
+
+            let tile = if self.objects_size {
+                if tile_offset < 8 {
+                    self.tileset[object.tile as usize & 0xfe]
+                } else {
+                    tile_offset -= 8;
+                    self.tileset[object.tile as usize | 0x01]
+                }
+            } else {
+                self.tileset[object.tile as usize]
+            };
+
+            let tile_row = tile.get_row(tile_offset as usize);
+
+            for tile_x in 0..8 {
+                let x = object.x + tile_x as i16;
+                let is_contained = (x >= 0) && (x < WIDTH as i16);
+                if is_contained {
+                    let is_visible =
+                        !object.priority || self.color_buffer[color_offset as usize] == 0;
+
+                    let has_priority =
+                        index_buffer[x as usize] == -256 || object.x < index_buffer[x as usize];
+
+                    let pixel = tile_row[if object.flip_x { 7 - tile_x } else { tile_x }];
+                    if is_visible && has_priority && pixel != 0 {
+                        index_buffer[x as usize] = object.x;
+
+                        let color = self.get_palette_color(palette, pixel);
+
+                        self.color_buffer[color_offset as usize] = pixel;
+                        self.frame_buffer[frame_offset as usize] = color[0];
+                        self.frame_buffer[frame_offset as usize + 1] = color[1];
+                        self.frame_buffer[frame_offset as usize + 2] = color[2];
+                    }
+                }
+
+                color_offset += 1;
+                frame_offset += 3;
+            }
         }
     }
 }
