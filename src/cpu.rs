@@ -248,8 +248,8 @@ impl CPU {
                 }
             }
             Instruction::SBC(target) => {
-                let value1 = self.get_instruction_target_byte(target) as u32;
-                let value2 = self.get_instruction_target_byte(InstructionTarget::A) as u32;
+                let value1 = self.get_instruction_target_byte(InstructionTarget::A) as u32;
+                let value2 = self.get_instruction_target_byte(target) as u32;
                 let result = value1
                     .wrapping_sub(value2)
                     .wrapping_sub(self.registers.carry as u32);
