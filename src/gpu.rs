@@ -1,3 +1,5 @@
+use std::borrow::BorrowMut;
+
 use crate::mmu::{OAM_SIZE, VRAM_SIZE};
 
 pub const WIDTH: usize = 160;
@@ -281,17 +283,17 @@ impl GPU {
 
         let byte = address % 4;
 
-        let mut object = self.objects[index];
+        let mut object = self.objects[index].borrow_mut();
 
         match byte {
             0 => object.y = (value as i16) - 0x10,
             1 => object.x = (value as i16) - 0x8,
             2 => object.tile = value,
             _ => {
-                object.palette = (value & 0x10) != 0;
-                object.flip_x = (value & 0x20) != 0;
-                object.flip_y = (value & 0x40) != 0;
-                object.priority = (value & 0x80) == 0;
+                object.palette = (value & 0x10) == 0x10;
+                object.flip_x = (value & 0x20) == 0x20;
+                object.flip_y = (value & 0x40) == 0x40;
+                object.priority = (value & 0x80) == 0x80;
             }
         }
     }
@@ -380,10 +382,18 @@ impl GPU {
 
     // TODO: Clean this up
     fn render_objects(&mut self) {
+        let mut draw_count = 0u8;
         let mut index_buffer = [-256i16; WIDTH];
+
         let object_height = if self.objects_size { 16 } else { 8 };
         let line = self.line as i16;
+
         for index in 0..OBJECT_COUNT {
+            // Only 10 objects can be drawn in one line
+            if draw_count == 10 {
+                break;
+            }
+
             let object = self.objects[index];
 
             if !((object.y <= line) && ((object.y + object_height as i16) > line)) {
@@ -443,6 +453,8 @@ impl GPU {
                 color_offset += 1;
                 frame_offset += 3;
             }
+
+            draw_count += 1;
         }
     }
 }

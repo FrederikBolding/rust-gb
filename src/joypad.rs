@@ -42,7 +42,7 @@ impl Joypad {
             Key::Backspace => self.select = true,
             _ => { return; }
         }
-        println!("Key down {:?}", key);
+        //println!("Key down {:?}", key);
         self.interrupt_flag = true;
     }
 
@@ -58,7 +58,7 @@ impl Joypad {
             Key::Backspace => self.select = false,
             _ => { return; }
         }
-        println!("Key up {:?}", key);
+        //println!("Key up {:?}", key);
     }
 
     pub fn to_byte(&self) -> u8 {
