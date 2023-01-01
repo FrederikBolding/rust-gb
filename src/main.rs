@@ -6,6 +6,7 @@ mod instruction;
 mod mmu;
 mod registers;
 mod joypad;
+mod timer;
 
 use std::{
     fs::read,

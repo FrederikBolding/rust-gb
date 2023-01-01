@@ -45,6 +45,7 @@ impl CPU {
     }
 
     pub fn step(&mut self) -> u8 {
+        let was_halted = self.halted;
         let byte = self.read_current_byte();
         let is_prefixed = byte == 0xCB;
         let instruction_byte = if is_prefixed {
@@ -57,37 +58,51 @@ impl CPU {
         let (next_program_counter, cycles) = self.execute(instruction);
         self.mmu.step(cycles);
 
-        if !self.halted {
+
+        if (self.mmu.vblank_interrupt_enabled && self.mmu.gpu.vblank_interrupt_flag)
+            || (self.mmu.lcdstat_interrupt_enabled && self.mmu.gpu.lcdstat_interrupt_flag)
+            || (self.mmu.timer_interrupt_enabled && self.mmu.timer.interrupt_flag)
+            || (self.mmu.joypad_interrupt_enabled && self.mmu.joypad.interrupt_flag)
+        {
+            self.halted = false;
+        }
+
+        if !self.halted || (self.halted && !was_halted) {
             self.program_counter = next_program_counter;
         }
 
         if self.interrupts_enabled {
             if self.mmu.vblank_interrupt_enabled && self.mmu.gpu.vblank_interrupt_flag {
                 self.mmu.gpu.vblank_interrupt_flag = false;
-                return cycles + self.interrupt(next_program_counter, 0x40);
+                return cycles + self.interrupt(0x40);
             }
 
             if self.mmu.lcdstat_interrupt_enabled && self.mmu.gpu.lcdstat_interrupt_flag {
                 self.mmu.gpu.lcdstat_interrupt_flag = false;
-                return cycles + self.interrupt(next_program_counter, 0x48);
+                return cycles + self.interrupt(0x48);
+            }
+
+            if self.mmu.timer_interrupt_enabled && self.mmu.timer.interrupt_flag {
+                self.mmu.timer.interrupt_flag = false;
+                return cycles + self.interrupt(0x50);
             }
 
             if self.mmu.joypad_interrupt_enabled && self.mmu.joypad.interrupt_flag {
                 self.mmu.joypad.interrupt_flag = false;
-                return cycles + self.interrupt(next_program_counter, 0x60);
+                return cycles + self.interrupt(0x60);
             }
         }
 
         cycles
     }
 
-    fn interrupt(&mut self, next_program_counter: u16, address: u16) -> u8 {
+    fn interrupt(&mut self, address: u16) -> u8 {
         self.halted = false;
         self.interrupts_enabled = false;
-        self.push(next_program_counter);
+        self.push(self.program_counter);
         self.program_counter = address;
-        self.mmu.step(12);
-        12
+        self.mmu.step(24);
+        24
     }
 
     fn get_instruction_target_byte(&mut self, target: InstructionTarget) -> u8 {
@@ -168,7 +183,7 @@ impl CPU {
         match instruction {
             Instruction::NOP => {
                 // no-op
-                (self.program_counter.wrapping_add(1), 1)
+                (self.program_counter.wrapping_add(1), 4)
             }
             Instruction::HALT => {
                 self.halted = true;
@@ -317,9 +332,9 @@ impl CPU {
                     let source_value = self.get_instruction_target_byte(source);
                     self.set_instruction_target_byte(target, source_value);
                     match source {
-                        InstructionTarget::D8 => (self.program_counter.wrapping_add(2), 8),
-                        InstructionTarget::HLI => (self.program_counter.wrapping_add(1), 8),
-                        _ => (self.program_counter.wrapping_add(1), 4),
+                        InstructionTarget::D8 => (self.program_counter.wrapping_add(2), if target == InstructionTarget::HLI { 12 } else { 8 }),
+                        InstructionTarget::HLI => (self.program_counter.wrapping_add(1), if target == InstructionTarget::D8 { 12 } else { 8 }),
+                        _ => (self.program_counter.wrapping_add(1), if target == InstructionTarget::HLI { 8 } else { 4 }),
                     }
                 }
                 LoadType::Word(target) => {
@@ -511,7 +526,7 @@ impl CPU {
                 self.registers.sub = false;
                 self.registers.half_carry = true;
                 let cycles = match target {
-                    InstructionTarget::HLI => 16,
+                    InstructionTarget::HLI => 12,
                     _ => 8,
                 };
                 (self.program_counter.wrapping_add(2), cycles)
@@ -558,12 +573,12 @@ impl CPU {
                     // Handle signed offsets
                     let offset = self.read_next_byte() as i8;
                     return if offset >= 0 {
-                        (next_program_counter.wrapping_add(offset as u16), 16)
+                        (next_program_counter.wrapping_add(offset as u16), 12)
                     } else {
-                        (next_program_counter.wrapping_sub(offset.abs() as u16), 16)
+                        (next_program_counter.wrapping_sub(offset.abs() as u16), 12)
                     };
                 } else {
-                    (next_program_counter, 12)
+                    (next_program_counter, 8)
                 }
             }
             Instruction::CP(target) => {

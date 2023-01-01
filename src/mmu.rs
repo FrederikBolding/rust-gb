@@ -11,7 +11,7 @@
 // FF00-FF7F - Memory-mapped IO
 // FF80-FFFF - Zero-page RAM
 
-use crate::{gpu::{GPUMode, GPU}, joypad::Joypad};
+use crate::{gpu::{GPUMode, GPU}, joypad::Joypad, timer::Timer};
 
 pub const BIOS_START: usize = 0x00;
 pub const BIOS_END: usize = 0xFF;
@@ -56,6 +56,7 @@ pub const ZERO_PAGE_SIZE: usize = ZERO_PAGE_END - ZERO_PAGE_START + 1;
 pub struct MMU {
     booting: bool,
     pub gpu: GPU,
+    pub timer: Timer,
     pub joypad: Joypad,
     bios: [u8; BIOS_SIZE],
     rom: Vec<u8>,
@@ -66,7 +67,7 @@ pub struct MMU {
     // Interrupts
     pub vblank_interrupt_enabled: bool,
     pub lcdstat_interrupt_enabled: bool,
-    pub timer_interrupt_enabled: bool,  // TODO
+    pub timer_interrupt_enabled: bool,
     pub serial_interrupt_enabled: bool, // TODO
     pub joypad_interrupt_enabled: bool,
 }
@@ -76,6 +77,7 @@ impl MMU {
         Self {
             booting: true,
             gpu: GPU::new(),
+            timer: Timer::new(),
             joypad: Joypad::new(),
             bios: [0; BIOS_SIZE],
             rom: vec![0; 0],
@@ -92,6 +94,7 @@ impl MMU {
     }
 
     pub fn step(&mut self, cycles: u8) {
+        self.timer.step(cycles);
         self.gpu.step(cycles);
     }
 
@@ -144,7 +147,14 @@ impl MMU {
                 0xFF00 => self.joypad.to_byte(),
                 0xFF01 => 0,    // TODO
                 0xFF02 => 0,    // TODO
-                0xFF25 => 0,    // TODO
+                0xFF04 => self.timer.divider,
+                0xFF0F => {
+                    (if self.gpu.vblank_interrupt_flag { 0x01 } else { 0x00 }
+                            | if self.gpu.lcdstat_interrupt_flag { 0x02 } else { 0x00 }
+                            | if self.timer.interrupt_flag { 0x04 } else { 0x00 }
+                            | if self.joypad.interrupt_flag { 0x10 } else { 0x00 })
+                }
+                0xFF25 => 0, // TODO
                 0xFF40 => {
                     (if self.gpu.background_enabled {
                         0x01
@@ -172,6 +182,7 @@ impl MMU {
                 0xFF45 => self.gpu.line_check,
                 0xFF4A => self.gpu.window_y,
                 0xFF4B => self.gpu.window_x,
+                0xFF4D => 0xFF, // TODO
                 _ => todo!(
                     "Tried to read from unimplemented IO register 0x{:02x}",
                     address
@@ -219,6 +230,28 @@ impl MMU {
                 // TODO
                 match address {
                     0xFF00 => self.joypad.column = value & 0x20 == 0,
+                    0xFF04 => self.timer.divider = 0,
+                    0xFF05 => {
+                        self.timer.counter = value;
+                    }
+                    0xFF06 => {
+                        self.timer.modulo = value;
+                    }
+                    0xFF07 => {
+                        self.timer.ratio = match value & 0b11 {
+                            0b00 => 1024,
+                            0b11 => 256,
+                            0b10 => 64,
+                            _ => 16,
+                        };
+                        self.timer.enabled = (value & 0x04) == 0x04;
+                    }
+                    0xFF0F => {
+                        self.gpu.vblank_interrupt_flag = value & 0x01 == 0x01;
+                        self.gpu.lcdstat_interrupt_flag = value & 0x02 == 0x02;
+                        self.timer.interrupt_flag = value & 0x04 == 0x04;
+                        self.joypad.interrupt_flag = value & 0x10 == 0x10;
+                    }
                     0xFF40 => {
                         self.gpu.background_enabled = value & 0x01 == 0x01;
                         self.gpu.objects_enabled = value & 0x02 == 0x02;

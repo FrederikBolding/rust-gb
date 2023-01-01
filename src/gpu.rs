@@ -206,16 +206,12 @@ impl GPU {
                     self.mode_clock -= 456;
                     self.line += 1;
 
-                    if self.line_equals_line_interrupt_enabled && self.line == self.line_check {
-                        self.lcdstat_interrupt_flag = true;
-                    }
-
                     if self.line == 154 {
                         self.mode = GPUMode::OAMAccess;
-                        if self.oam_interrupt_enabled {
+                        self.line = 0;
+                        if self.oam_interrupt_enabled || (self.line_equals_line_interrupt_enabled && self.line == self.line_check) {
                             self.lcdstat_interrupt_flag = true;
                         }
-                        self.line = 0;
                         self.window_counter = 0;
                     }
                 }
