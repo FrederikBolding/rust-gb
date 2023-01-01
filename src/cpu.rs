@@ -255,7 +255,7 @@ impl CPU {
                 self.registers.zero = result_byte == 0;
                 self.registers.sub = true;
                 self.registers.carry = (result & 0x100) == 0x100;
-                self.registers.half_carry = (value2 & 0xF) < (value1 & 0xF);
+                self.registers.half_carry = (value1 ^ value2 ^ result) & 0x10 == 0x10;
                 match target {
                     InstructionTarget::D8 => (self.program_counter.wrapping_add(2), 8),
                     InstructionTarget::HLI => (self.program_counter.wrapping_add(1), 8),
@@ -272,8 +272,7 @@ impl CPU {
                 self.set_instruction_target_byte(InstructionTarget::A, result_byte);
                 self.registers.zero = result_byte == 0;
                 self.registers.sub = true;
-                self.registers.half_carry =
-                    (value2 & 0xF) < (value1 & 0xF) + self.registers.carry as u32;
+                self.registers.half_carry = (value1 ^ value2 ^ result) & 0x10 == 0x10;
                 self.registers.carry = (result & 0x100) == 0x100;
                 match target {
                     InstructionTarget::D8 => (self.program_counter.wrapping_add(2), 8),
@@ -314,7 +313,7 @@ impl CPU {
                     let value = current_value.wrapping_sub(1);
                     self.set_instruction_target_byte(target, value);
                     self.registers.zero = value == 0;
-                    self.registers.half_carry = current_value & 0xF == 0xF;
+                    self.registers.half_carry = current_value & 0xF == 0x0;
                     self.registers.sub = true;
                 }
                 let cycles = match target {
@@ -656,7 +655,7 @@ impl CPU {
                 let value = self.get_instruction_target_byte(InstructionTarget::A);
                 let result = (value << 1) | self.registers.carry as u8;
                 self.set_instruction_target_byte(InstructionTarget::A, result);
-                self.registers.zero = result == 0;
+                self.registers.zero = false;
                 self.registers.sub = false;
                 self.registers.half_carry = false;
                 self.registers.carry = (value & 0x80) == 0x80;
