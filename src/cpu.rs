@@ -542,7 +542,7 @@ impl CPU {
                 (self.program_counter.wrapping_add(1), 12)
             }
             Instruction::RST(location) => {
-                self.push(self.program_counter);
+                self.push(self.program_counter.wrapping_add(1));
                 (location.to_hex(), 24)
             }
             Instruction::JP(test) => {
@@ -728,6 +728,16 @@ impl CPU {
                 };
                 (self.program_counter.wrapping_add(2), cycles)
             }
+            Instruction::RLC(target) => {
+                let value = self.get_instruction_target_byte(target);
+                let result = (value << 1) | (value >> 7);
+                self.set_instruction_target_byte(target, result);
+                self.registers.zero = result == 0;
+                self.registers.sub = false;
+                self.registers.half_carry = false;
+                self.registers.carry = (value & 0x80) == 0x80;
+                (self.program_counter.wrapping_add(2), 4)
+            }
             Instruction::RLCA => {
                 let value = self.get_instruction_target_byte(InstructionTarget::A);
                 let carry = value >> 7;
@@ -737,6 +747,27 @@ impl CPU {
                 self.registers.sub = false;
                 self.registers.half_carry = false;
                 self.registers.carry = carry == 1;
+                (self.program_counter.wrapping_add(1), 4)
+            }
+            Instruction::RRC(target) => {
+                let value = self.get_instruction_target_byte(target);
+                let result = (value >> 1) | (value << 7);
+                self.set_instruction_target_byte(target, result);
+                self.registers.zero = result == 0;
+                self.registers.sub = false;
+                self.registers.half_carry = false;
+                self.registers.carry = (value & 0x1) == 0x1;
+                (self.program_counter.wrapping_add(2), 4)
+            }
+            Instruction::RRCA => {
+                let value = self.get_instruction_target_byte(InstructionTarget::A);
+                let carry = value & 0x1;
+                let result = (value >> 1) | (carry << 7);
+                self.set_instruction_target_byte(InstructionTarget::A, result);
+                self.registers.zero = false;
+                self.registers.sub = false;
+                self.registers.half_carry = false;
+                self.registers.carry = carry == 0x01;
                 (self.program_counter.wrapping_add(1), 4)
             }
             Instruction::SWAP(target) => {

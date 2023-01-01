@@ -84,7 +84,7 @@ impl MMU {
             external_ram: [0; EXTERNAL_RAM_SIZE],
             working_ram: [0; WORKING_RAM_SIZE],
             zero_page_ram: [0; ZERO_PAGE_SIZE],
-            rom_bank: 0,
+            rom_bank: 1,
             vblank_interrupt_enabled: false,
             lcdstat_interrupt_enabled: false,
             timer_interrupt_enabled: false,
@@ -100,7 +100,6 @@ impl MMU {
 
     pub fn finish_boot(&mut self) {
         self.booting = false;
-        println!("Finished boot");
     }
 
     pub fn load_bios(&mut self, bios: Vec<u8>) {
@@ -329,8 +328,26 @@ impl MMU {
             }
             // ROM bank selection
             0x2000 => {
-                println!("Setting ROM bank 0x{:2x} to {:?}", address, value);
-                self.rom_bank = value;
+                // TODO: Stop assuming MBC1
+                let rom_bank_count = match self.rom[0x0148] {
+                    0x00 => 2,
+                    0x01 => 4,
+                    0x02 => 8,
+                    0x03 => 16,
+                    0x04 => 32,
+                    0x05 => 64,
+                    0x06 => 128,
+                    0x07 => 256,
+                    0x08 => 512,
+                    _ => 0,
+                };
+                let mut bank = value & 0x1f;
+                bank &= (rom_bank_count * 2 - 1) as u8;
+                if bank == 0 {
+                    bank = 1;
+                }
+                //println!("Setting ROM bank 0x{:2x} to {:?} ({})", address, bank, rom_bank_count);
+                self.rom_bank = bank;
             }
             0x4000 | 0x5000 => {
                 println!("Setting RAM bank 0x{:2x} to {:?}", address, value);
