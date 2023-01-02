@@ -1,4 +1,4 @@
-use minifb::{Key};
+use minifb::Key;
 
 pub struct Joypad {
     pub up: bool,
@@ -40,7 +40,9 @@ impl Joypad {
             Key::X => self.b = true,
             Key::Enter => self.start = true,
             Key::Backspace => self.select = true,
-            _ => { return; }
+            _ => {
+                return;
+            }
         }
         //println!("Key down {:?}", key);
         self.interrupt_flag = true;
@@ -56,17 +58,15 @@ impl Joypad {
             Key::X => self.b = false,
             Key::Enter => self.start = false,
             Key::Backspace => self.select = false,
-            _ => { return; }
+            _ => {
+                return;
+            }
         }
         //println!("Key up {:?}", key);
     }
 
     pub fn to_byte(&self) -> u8 {
-        let column_bit = if !self.column {
-            1 << 5
-        } else {
-            1 << 4
-        };
+        let column_bit = if !self.column { 1 << 5 } else { 1 << 4 };
 
         let bits = match self.column {
             true => {

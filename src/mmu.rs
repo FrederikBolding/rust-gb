@@ -11,7 +11,11 @@
 // FF00-FF7F - Memory-mapped IO
 // FF80-FFFF - Zero-page RAM
 
-use crate::{gpu::{GPUMode, GPU}, joypad::Joypad, timer::Timer};
+use crate::{
+    gpu::{GPUMode, GPU},
+    joypad::Joypad,
+    timer::Timer,
+};
 
 pub const BIOS_START: usize = 0x00;
 pub const BIOS_END: usize = 0xFF;
@@ -144,14 +148,27 @@ impl MMU {
             }
             IO_START..=IO_END => match address {
                 0xFF00 => self.joypad.to_byte(),
-                0xFF01 => 0,    // TODO
-                0xFF02 => 0,    // TODO
+                0xFF01 => 0, // TODO
+                0xFF02 => 0, // TODO
                 0xFF04 => self.timer.divider,
                 0xFF0F => {
-                    (if self.gpu.vblank_interrupt_flag { 0x01 } else { 0x00 }
-                            | if self.gpu.lcdstat_interrupt_flag { 0x02 } else { 0x00 }
-                            | if self.timer.interrupt_flag { 0x04 } else { 0x00 }
-                            | if self.joypad.interrupt_flag { 0x10 } else { 0x00 })
+                    (if self.gpu.vblank_interrupt_flag {
+                        0x01
+                    } else {
+                        0x00
+                    } | if self.gpu.lcdstat_interrupt_flag {
+                        0x02
+                    } else {
+                        0x00
+                    } | if self.timer.interrupt_flag {
+                        0x04
+                    } else {
+                        0x00
+                    } | if self.joypad.interrupt_flag {
+                        0x10
+                    } else {
+                        0x00
+                    })
                 }
                 0xFF25 => 0, // TODO
                 0xFF40 => {
@@ -168,12 +185,27 @@ impl MMU {
                         | if self.gpu.lcd_enabled { 0x80 } else { 0x00 })
                 }
                 0xFF41 => {
-                    (if self.gpu.hblank_interrupt_enabled { 0x08 } else { 0x00 }
-                        | if self.gpu.vblank_interrupt_enabled { 0x10 } else { 0x00 }
-                        | if self.gpu.oam_interrupt_enabled { 0x20 } else { 0x00 }
-                        | if self.gpu.line_equals_line_interrupt_enabled { 0x40 } else { 0x00 }
-                        | if self.gpu.line == self.gpu.line_check { 0x04 } else { 0x00 }
-                        | (self.gpu.mode as u8 & 0x03))
+                    (if self.gpu.hblank_interrupt_enabled {
+                        0x08
+                    } else {
+                        0x00
+                    } | if self.gpu.vblank_interrupt_enabled {
+                        0x10
+                    } else {
+                        0x00
+                    } | if self.gpu.oam_interrupt_enabled {
+                        0x20
+                    } else {
+                        0x00
+                    } | if self.gpu.line_equals_line_interrupt_enabled {
+                        0x40
+                    } else {
+                        0x00
+                    } | if self.gpu.line == self.gpu.line_check {
+                        0x04
+                    } else {
+                        0x00
+                    } | (self.gpu.mode as u8 & 0x03))
                 }
                 0xFF42 => self.gpu.scroll_y,
                 0xFF43 => self.gpu.scroll_x,
@@ -245,7 +277,7 @@ impl MMU {
                         };
                         self.timer.enabled = (value & 0x04) == 0x04;
                     }
-                    0xFF10..=0xFF26 => { 
+                    0xFF10..=0xFF26 => {
                         // TODO: Sound
                     }
                     0xFF30..=0xFF3F => {

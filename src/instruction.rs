@@ -176,7 +176,7 @@ pub enum Instruction {
     NOP,
     DI,
     EI,
-    STOP
+    STOP,
 }
 
 impl Instruction {

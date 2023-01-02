@@ -58,7 +58,6 @@ impl CPU {
         let (next_program_counter, cycles) = self.execute(instruction);
         self.mmu.step(cycles);
 
-
         if (self.mmu.vblank_interrupt_enabled && self.mmu.gpu.vblank_interrupt_flag)
             || (self.mmu.lcdstat_interrupt_enabled && self.mmu.gpu.lcdstat_interrupt_flag)
             || (self.mmu.timer_interrupt_enabled && self.mmu.timer.interrupt_flag)
@@ -331,9 +330,30 @@ impl CPU {
                     let source_value = self.get_instruction_target_byte(source);
                     self.set_instruction_target_byte(target, source_value);
                     match source {
-                        InstructionTarget::D8 => (self.program_counter.wrapping_add(2), if target == InstructionTarget::HLI { 12 } else { 8 }),
-                        InstructionTarget::HLI => (self.program_counter.wrapping_add(1), if target == InstructionTarget::D8 { 12 } else { 8 }),
-                        _ => (self.program_counter.wrapping_add(1), if target == InstructionTarget::HLI { 8 } else { 4 }),
+                        InstructionTarget::D8 => (
+                            self.program_counter.wrapping_add(2),
+                            if target == InstructionTarget::HLI {
+                                12
+                            } else {
+                                8
+                            },
+                        ),
+                        InstructionTarget::HLI => (
+                            self.program_counter.wrapping_add(1),
+                            if target == InstructionTarget::D8 {
+                                12
+                            } else {
+                                8
+                            },
+                        ),
+                        _ => (
+                            self.program_counter.wrapping_add(1),
+                            if target == InstructionTarget::HLI {
+                                8
+                            } else {
+                                4
+                            },
+                        ),
                     }
                 }
                 LoadType::Word(target) => {

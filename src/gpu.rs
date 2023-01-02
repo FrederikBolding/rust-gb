@@ -142,7 +142,7 @@ impl GPU {
             objects_enabled: false,
             objects_size: false,
             objects_palette_0: 0,
-            objects_palette_1: 0
+            objects_palette_1: 0,
         }
     }
 
@@ -209,7 +209,10 @@ impl GPU {
                     if self.line == 154 {
                         self.mode = GPUMode::OAMAccess;
                         self.line = 0;
-                        if self.oam_interrupt_enabled || (self.line_equals_line_interrupt_enabled && self.line == self.line_check) {
+                        if self.oam_interrupt_enabled
+                            || (self.line_equals_line_interrupt_enabled
+                                && self.line == self.line_check)
+                        {
                             self.lcdstat_interrupt_flag = true;
                         }
                         self.window_counter = 0;

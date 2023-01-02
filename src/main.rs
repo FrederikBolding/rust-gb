@@ -3,9 +3,9 @@ extern crate minifb;
 mod cpu;
 mod gpu;
 mod instruction;
+mod joypad;
 mod mmu;
 mod registers;
-mod joypad;
 mod timer;
 
 use std::{
@@ -54,8 +54,14 @@ fn main() {
             cycles_run += cpu.step() as usize;
         }
 
-        window.get_keys_pressed(minifb::KeyRepeat::Yes).iter().for_each(|key| cpu.mmu.joypad.on_key_down(*key));
-        window.get_keys_released().iter().for_each(|key| cpu.mmu.joypad.on_key_up(*key));
+        window
+            .get_keys_pressed(minifb::KeyRepeat::Yes)
+            .iter()
+            .for_each(|key| cpu.mmu.joypad.on_key_down(*key));
+        window
+            .get_keys_released()
+            .iter()
+            .for_each(|key| cpu.mmu.joypad.on_key_up(*key));
 
         if cpu.mmu.gpu.flush_frame_buffer {
             for (i, pixel) in cpu.mmu.gpu.frame_buffer.chunks(3).enumerate() {
