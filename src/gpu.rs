@@ -336,14 +336,14 @@ impl GPU {
 
     // TODO: Clean this up
     fn render_map(&mut self, map: bool, scroll_x: u8, scroll_y: u8, window_x: u8, line: u8) {
-        let row_offset = ((((self.line as usize) + (scroll_y as usize)) & 0xff) >> 3) % 32;
-        let map_offset: usize = if map { 0x1C00 } else { 0x1800 } + (row_offset * 32);
+        let row_offset = ((((line as usize) + (scroll_y as usize)) & 0xff) >> 3) % 32;
+        let map_offset: usize = (if map { 0x1C00 } else { 0x1800 }) + (row_offset * 32);
 
         let mut line_offset = (scroll_x >> 3) as usize;
         let y = ((line as usize + scroll_y as usize) & 7) as usize;
         let mut x = (scroll_x & 7) as usize;
-        let mut color_offset = (line as usize) * WIDTH;
-        let mut frame_offset = (line as usize) * WIDTH * 3;
+        let mut color_offset = (self.line as usize) * WIDTH;
+        let mut frame_offset = color_offset * 3;
 
         let mut tile_index = self.vram[map_offset + line_offset] as usize;
         // Some tiles are indexed using signed indices
@@ -392,7 +392,7 @@ impl GPU {
 
             let object = self.objects[index];
 
-            if !((object.y <= line) && ((object.y + object_height as i16) > line)) {
+            if !((object.y <= line) && ((object.y + object_height as i16) > line as i16)) {
                 continue;
             }
 
@@ -403,8 +403,8 @@ impl GPU {
             };
 
             let mut color_offset = self.line as i32 * WIDTH as i32 + object.x as i32;
-            let mut frame_offset = (self.line as i32 * WIDTH as i32 + object.x as i32) * 3 as i32;
-            let mut tile_offset = line - object.y;
+            let mut frame_offset = color_offset * 3 as i32;
+            let mut tile_offset = line as i16 - object.y;
 
             if object.flip_y {
                 tile_offset = object_height as i16 - tile_offset - 1;

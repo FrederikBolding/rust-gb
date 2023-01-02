@@ -245,6 +245,12 @@ impl MMU {
                         };
                         self.timer.enabled = (value & 0x04) == 0x04;
                     }
+                    0xFF10..=0xFF26 => { 
+                        // TODO: Sound
+                    }
+                    0xFF30..=0xFF3F => {
+                        // TODO: WAV
+                    }
                     0xFF0F => {
                         self.gpu.vblank_interrupt_flag = value & 0x01 == 0x01;
                         self.gpu.lcdstat_interrupt_flag = value & 0x02 == 0x02;
