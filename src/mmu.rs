@@ -64,10 +64,12 @@ pub struct MMU {
     pub joypad: Joypad,
     bios: [u8; BIOS_SIZE],
     rom: Vec<u8>,
-    external_ram: [u8; EXTERNAL_RAM_SIZE],
+    external_ram: Vec<u8>,
     working_ram: [u8; WORKING_RAM_SIZE],
     zero_page_ram: [u8; ZERO_PAGE_SIZE],
     rom_bank: u8,
+    ram_bank: u8,
+    ram_enabled: bool,
     // Interrupts
     pub vblank_interrupt_enabled: bool,
     pub lcdstat_interrupt_enabled: bool,
@@ -85,10 +87,12 @@ impl MMU {
             joypad: Joypad::new(),
             bios: [0; BIOS_SIZE],
             rom: vec![0; 0],
-            external_ram: [0; EXTERNAL_RAM_SIZE],
+            external_ram: vec![0; 0],
             working_ram: [0; WORKING_RAM_SIZE],
             zero_page_ram: [0; ZERO_PAGE_SIZE],
             rom_bank: 1,
+            ram_bank: 0,
+            ram_enabled: false,
             vblank_interrupt_enabled: false,
             lcdstat_interrupt_enabled: false,
             timer_interrupt_enabled: false,
@@ -119,6 +123,19 @@ impl MMU {
         println!("ROM type 0x{:2x}", self.rom[0x0147]);
         let title = String::from(std::str::from_utf8(&self.rom[0x0134..0x0143]).unwrap());
         println!("ROM Title: {}", title);
+
+        let ram_type = self.rom[0x149];
+        let ram_banks = match ram_type {
+            0x00 => 0,
+            0x01 => 0,
+            0x02 => 1,
+            0x03 => 4,
+            0x04 => 16,
+            0x05 => 8,
+            _ => 0
+        };
+        // Allocate external RAM based on amount of banks
+        self.external_ram = vec![0u8; EXTERNAL_RAM_SIZE * ram_banks];
     }
 
     pub fn read(&mut self, address: u16) -> u8 {
@@ -140,7 +157,8 @@ impl MMU {
             VRAM_START..=VRAM_END => self.gpu.vram[address - VRAM_START],
             OAM_START..=OAM_END => self.gpu.oam[address - OAM_START],
             EXTERNAL_RAM_START..=EXTERNAL_RAM_END => {
-                self.external_ram[address - EXTERNAL_RAM_START]
+                let offset = EXTERNAL_RAM_SIZE * self.ram_bank as usize;
+                self.external_ram[offset + address - EXTERNAL_RAM_START]
             }
             WORKING_RAM_START..=WORKING_RAM_END => self.working_ram[address - WORKING_RAM_START],
             SHADOW_WORKING_RAM_START..=SHADOW_WORKING_RAM_END => {
@@ -170,7 +188,10 @@ impl MMU {
                         0x00
                     })
                 }
-                0xFF25 => 0, // TODO
+                0xFF10..=0xFF26 => {
+                    // TODO: Sound
+                    0
+                }
                 0xFF40 => {
                     (if self.gpu.background_enabled {
                         0x01
@@ -211,6 +232,9 @@ impl MMU {
                 0xFF43 => self.gpu.scroll_x,
                 0xFF44 => self.gpu.line,
                 0xFF45 => self.gpu.line_check,
+                0xFF47 => self.gpu.background_palette,
+                0xFF48 => self.gpu.objects_palette_0,
+                0xFF49 => self.gpu.objects_palette_1,
                 0xFF4A => self.gpu.window_y,
                 0xFF4B => self.gpu.window_x,
                 0xFF4D => 0xFF, // TODO
@@ -242,6 +266,9 @@ impl MMU {
             ROM_BANK_0_START..=ROM_BANK_0_END => {
                 self.write_rom(address as u16, value);
             }
+            ROM_BANK_N_START..=ROM_BANK_N_END => {
+                self.write_rom(address as u16, value);
+            }
             VRAM_START..=VRAM_END => {
                 self.gpu.write_vram(address - VRAM_START, value);
             }
@@ -249,7 +276,11 @@ impl MMU {
                 self.gpu.write_oam(address - OAM_START, value);
             }
             EXTERNAL_RAM_START..=EXTERNAL_RAM_END => {
-                self.external_ram[address - EXTERNAL_RAM_START] = value;
+                if !self.ram_enabled {
+                    return;
+                }
+                let offset = EXTERNAL_RAM_SIZE * self.ram_bank as usize;
+                self.external_ram[offset + address - EXTERNAL_RAM_START] = value;
             }
             WORKING_RAM_START..=WORKING_RAM_END => {
                 self.working_ram[address - WORKING_RAM_START] = value
@@ -361,8 +392,8 @@ impl MMU {
         match address & 0xf000 {
             // RAM enabled flag
             0x0000 | 0x1000 => {
-                // TODO
-                println!("Enable RAM: {}", (value & 0x0f) == 0x0a);
+                self.ram_enabled = (value & 0x0f) == 0x0a;
+                println!("Enable RAM: {}", self.ram_enabled);
             }
             // ROM bank selection
             0x2000 => {
@@ -388,9 +419,12 @@ impl MMU {
                 self.rom_bank = bank;
             }
             0x4000 | 0x5000 => {
-                println!("Setting RAM bank 0x{:2x} to {:?}", address, value);
+                // TODO: Stop assuming MBC1
+                let ram_bank = value & 0x03;
+                println!("Setting RAM bank 0x{:2x} to {:?}", address, ram_bank);
+                self.ram_bank = ram_bank;
             }
-            _ => panic!(
+            _ => println!(
                 "Writing to unimplemented rom location 0x{:2x} 0x{:2x}",
                 address, value
             ),
