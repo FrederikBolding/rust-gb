@@ -275,25 +275,24 @@ impl GPU {
     }
 
     fn update_object(&mut self, address: usize, value: u8) {
-        let index = address / 4;
-        if index > OBJECT_COUNT {
+        let object_address = (address & 0x01FF) as usize;
+        let index = object_address >> 2;
+        if index >= OBJECT_COUNT {
             return;
         }
 
-        let byte = address % 4;
-
         let mut object = self.objects[index].borrow_mut();
-
-        match byte {
-            0 => object.y = (value as i16) - 0x10,
-            1 => object.x = (value as i16) - 0x8,
-            2 => object.tile = value,
-            _ => {
+        match object_address & 0x03 {
+            0x00 => object.y = (value as i16) - 0x10,
+            0x01 => object.x = (value as i16) - 0x8,
+            0x02 => object.tile = value,
+            0x03 => {
                 object.palette = (value & 0x10) == 0x10;
                 object.flip_x = (value & 0x20) == 0x20;
                 object.flip_y = (value & 0x40) == 0x40;
                 object.priority = (value & 0x80) == 0x80;
             }
+            _ => {}
         }
     }
 
@@ -387,15 +386,13 @@ impl GPU {
         let object_height = if self.objects_size { 16 } else { 8 };
         let line = self.line as i16;
 
-        for index in 0..OBJECT_COUNT {
+        for object in self.objects.iter() {
             // Only 10 objects can be drawn in one line
             if draw_count == 10 {
                 break;
             }
 
-            let object = self.objects[index];
-
-            if !((object.y <= line) && ((object.y + object_height as i16) > line as i16)) {
+            if (object.y > line) || ((object.y + object_height as i16) <= line as i16) {
                 continue;
             }
 
@@ -407,7 +404,7 @@ impl GPU {
 
             let mut color_offset = self.line as i32 * WIDTH as i32 + object.x as i32;
             let mut frame_offset = color_offset * 3 as i32;
-            let mut tile_offset = line as i16 - object.y;
+            let mut tile_offset = line - object.y;
 
             if object.flip_y {
                 tile_offset = object_height as i16 - tile_offset - 1;
@@ -428,8 +425,7 @@ impl GPU {
 
             for tile_x in 0..8 {
                 let x = object.x + tile_x as i16;
-                let is_contained = (x >= 0) && (x < WIDTH as i16);
-                if is_contained {
+                if (x >= 0) && (x < WIDTH as i16) {
                     let is_visible =
                         !object.priority || self.color_buffer[color_offset as usize] == 0;
 
