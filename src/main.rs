@@ -30,7 +30,6 @@ fn main() {
     cpu.mmu.load_bios(bios);
     cpu.mmu.load_rom(rom);
 
-    let mut buffer: Vec<u32> = vec![0; WIDTH * HEIGHT];
     let keys = [
         Key::Up,
         Key::Down,
@@ -75,10 +74,7 @@ fn main() {
         });
 
         if cpu.mmu.gpu.flush_frame_buffer {
-            for (i, pixel) in cpu.mmu.gpu.frame_buffer.chunks(3).enumerate() {
-                buffer[i] = (pixel[2] as u32) << 16 | (pixel[1] as u32) << 8 | (pixel[0] as u32)
-            }
-            window.update_with_buffer(&buffer, WIDTH, HEIGHT).unwrap();
+            window.update_with_buffer(&cpu.mmu.gpu.frame_buffer, WIDTH, HEIGHT).unwrap();
             cpu.mmu.gpu.flushed();
         } else {
             sleep(Duration::from_nanos(2))

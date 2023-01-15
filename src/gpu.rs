@@ -5,8 +5,8 @@ use crate::mmu::{OAM_SIZE, VRAM_SIZE};
 pub const WIDTH: usize = 160;
 pub const HEIGHT: usize = 144;
 
-pub const FRAME_BUFFER_SIZE: usize = WIDTH * HEIGHT * 3;
-pub const COLOR_BUFFER_SIZE: usize = WIDTH * HEIGHT;
+pub const FRAME_BUFFER_SIZE: usize = WIDTH * HEIGHT;
+pub const COLOR_BUFFER_SIZE: usize = FRAME_BUFFER_SIZE;
 pub const TILE_COUNT: usize = 384;
 pub const OBJECT_COUNT: usize = 40;
 
@@ -48,9 +48,14 @@ pub enum GPUMode {
     VRAMAccess,
 }
 
+fn from_u8_rgb(r: u8, g: u8, b: u8) -> u32 {
+    let (r, g, b) = (r as u32, g as u32, b as u32);
+    (r << 16) | (g << 8) | b
+}
+
 pub struct GPU {
     pub flush_frame_buffer: bool,
-    pub frame_buffer: [u8; FRAME_BUFFER_SIZE],
+    pub frame_buffer: [u32; FRAME_BUFFER_SIZE],
     color_buffer: [u8; COLOR_BUFFER_SIZE],
     pub vram: [u8; VRAM_SIZE],
     pub oam: [u8; OAM_SIZE],
@@ -298,7 +303,7 @@ impl GPU {
         }
     }
 
-    fn get_palette_color(&self, palette: u8, pixel: u8) -> [u8; 3] {
+    fn get_palette_color(&self, palette: u8, pixel: u8) -> u32 {
         let a = palette & 0b11;
         let b = (palette >> 2) & 0b11;
         let c = (palette >> 4) & 0b11;
@@ -311,10 +316,10 @@ impl GPU {
             _ => panic!("Invalid pixel input"),
         };
         match index {
-            0 => [255, 255, 255],
-            1 => [192, 192, 192],
-            2 => [96, 96, 96],
-            3 => [0, 0, 0],
+            0 => from_u8_rgb(255, 255, 255),
+            1 => from_u8_rgb(192, 192, 192),
+            2 => from_u8_rgb(96, 96, 96),
+            3 => from_u8_rgb(0, 0, 0),
             _ => panic!("Invalid pixel input"),
         }
     }
@@ -346,8 +351,7 @@ impl GPU {
         let mut line_offset = (scroll_x >> 3) as usize;
         let y = ((line as usize + scroll_y as usize) & 7) as usize;
         let mut x = (scroll_x & 7) as usize;
-        let mut color_offset = (self.line as usize) * WIDTH;
-        let mut frame_offset = color_offset * 3;
+        let mut frame_offset = (self.line as usize) * WIDTH;
 
         let mut tile_index = self.vram[map_offset + line_offset] as usize;
         // Some tiles are indexed using signed indices
@@ -359,10 +363,8 @@ impl GPU {
             if index as i16 >= window_x as i16 - 7 {
                 let pixel = self.tileset[tile_index].get(x, y);
                 let color = self.get_palette_color(self.background_palette, pixel);
-                self.color_buffer[color_offset] = pixel;
-                self.frame_buffer[frame_offset] = color[0];
-                self.frame_buffer[frame_offset + 1] = color[1];
-                self.frame_buffer[frame_offset + 2] = color[2];
+                self.color_buffer[frame_offset] = pixel;
+                self.frame_buffer[frame_offset] = color;
 
                 x += 1;
                 if x == 8 {
@@ -375,8 +377,7 @@ impl GPU {
                 }
             }
 
-            color_offset += 1;
-            frame_offset += 3;
+            frame_offset += 1;
         }
     }
 
@@ -404,8 +405,7 @@ impl GPU {
                 self.objects_palette_0
             };
 
-            let mut color_offset = self.line as i32 * WIDTH as i32 + object.x as i32;
-            let mut frame_offset = color_offset * 3 as i32;
+            let mut frame_offset = self.line as i32 * WIDTH as i32 + object.x as i32;
             let mut tile_offset = line - object.y;
 
             if object.flip_y {
@@ -429,7 +429,7 @@ impl GPU {
                 let x = object.x + tile_x as i16;
                 if (x >= 0) && (x < WIDTH as i16) {
                     let is_visible =
-                        !object.priority || self.color_buffer[color_offset as usize] == 0;
+                        !object.priority || self.color_buffer[frame_offset as usize] == 0;
 
                     let has_priority =
                         index_buffer[x as usize] == -256 || object.x < index_buffer[x as usize];
@@ -440,15 +440,12 @@ impl GPU {
 
                         let color = self.get_palette_color(palette, pixel);
 
-                        self.color_buffer[color_offset as usize] = pixel;
-                        self.frame_buffer[frame_offset as usize] = color[0];
-                        self.frame_buffer[frame_offset as usize + 1] = color[1];
-                        self.frame_buffer[frame_offset as usize + 2] = color[2];
+                        self.color_buffer[frame_offset as usize] = pixel;
+                        self.frame_buffer[frame_offset as usize] = color;
                     }
                 }
 
-                color_offset += 1;
-                frame_offset += 3;
+                frame_offset += 1;
             }
 
             draw_count += 1;
