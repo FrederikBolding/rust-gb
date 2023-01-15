@@ -352,7 +352,7 @@ impl MMU {
                         // Direct Memory Access
                         let source = (value as u16) << 8;
                         let destination = OAM_START as u16;
-                        for offset in 0..160 {
+                        for offset in 0..(OAM_SIZE as u16) {
                             let byte = self.read(source + offset);
                             self.write(destination + offset, byte)
                         }
