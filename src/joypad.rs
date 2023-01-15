@@ -30,6 +30,20 @@ impl Joypad {
         }
     }
 
+    pub fn is_key_down(&self, key: Key) -> bool {
+        match key {
+            Key::Up => self.up,
+            Key::Down => self.down,
+            Key::Left => self.left,
+            Key::Right => self.right,
+            Key::Z => self.a,
+            Key::X => self.b,
+            Key::Enter => self.start,
+            Key::Backspace => self.select,
+            _ => false,
+        }
+    }
+
     pub fn on_key_down(&mut self, key: Key) {
         match key {
             Key::Up => self.up = true,

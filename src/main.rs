@@ -31,6 +31,16 @@ fn main() {
     cpu.mmu.load_rom(rom);
 
     let mut buffer: Vec<u32> = vec![0; WIDTH * HEIGHT];
+    let keys = [
+        Key::Up,
+        Key::Down,
+        Key::Left,
+        Key::Right,
+        Key::Z,
+        Key::X,
+        Key::Enter,
+        Key::Backspace,
+    ];
 
     let mut window = Window::new(
         "rust-gb - ESC to exit",
@@ -54,14 +64,15 @@ fn main() {
             cycles_run += cpu.step() as usize;
         }
 
-        window
-            .get_keys_pressed(minifb::KeyRepeat::Yes)
-            .iter()
-            .for_each(|key| cpu.mmu.joypad.on_key_down(*key));
-        window
-            .get_keys_released()
-            .iter()
-            .for_each(|key| cpu.mmu.joypad.on_key_up(*key));
+        keys.iter().for_each(|key| {
+            let was_down = cpu.mmu.joypad.is_key_down(*key);
+            let is_down = window.is_key_down(*key);
+            if !was_down && is_down {
+                cpu.mmu.joypad.on_key_down(*key)
+            } else if was_down && !is_down {
+                cpu.mmu.joypad.on_key_up(*key);
+            }
+        });
 
         if cpu.mmu.gpu.flush_frame_buffer {
             for (i, pixel) in cpu.mmu.gpu.frame_buffer.chunks(3).enumerate() {
