@@ -562,7 +562,7 @@ impl CPU {
             }
             Instruction::RST(location) => {
                 self.push(self.program_counter.wrapping_add(1));
-                (location.to_hex(), 24)
+                (location.to_hex(), 16)
             }
             Instruction::JP(test) => {
                 let jump_condition = match test {
@@ -755,7 +755,11 @@ impl CPU {
                 self.registers.sub = false;
                 self.registers.half_carry = false;
                 self.registers.carry = (value & 0x80) == 0x80;
-                (self.program_counter.wrapping_add(2), 4)
+                let cycles = match target {
+                    InstructionTarget::HLI => 16,
+                    _ => 8,
+                };
+                (self.program_counter.wrapping_add(2), cycles)
             }
             Instruction::RLCA => {
                 let value = self.get_instruction_target_byte(InstructionTarget::A);
@@ -776,7 +780,11 @@ impl CPU {
                 self.registers.sub = false;
                 self.registers.half_carry = false;
                 self.registers.carry = (value & 0x1) == 0x1;
-                (self.program_counter.wrapping_add(2), 4)
+                let cycles = match target {
+                    InstructionTarget::HLI => 16,
+                    _ => 8,
+                };
+                (self.program_counter.wrapping_add(2), cycles)
             }
             Instruction::RRCA => {
                 let value = self.get_instruction_target_byte(InstructionTarget::A);
