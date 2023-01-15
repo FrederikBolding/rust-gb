@@ -174,7 +174,9 @@ impl GPU {
                         && self.window_y < HEIGHT as u8
                         && self.line >= self.window_y
                     {
-                        self.window_counter += 1;
+                        // TODO: Figure out if this should be wrapping
+                        // It would sometimes overflow without being wrapping. Could be a timing issue?
+                        self.window_counter = self.window_counter.wrapping_add(1);
                     }
 
                     self.line += 1;

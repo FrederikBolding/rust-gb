@@ -169,6 +169,8 @@ impl MMU {
                 0xFF01 => 0, // TODO
                 0xFF02 => 0, // TODO
                 0xFF04 => self.timer.divider,
+                0xFF05 => self.timer.counter,
+                0xFF06 => self.timer.modulo,
                 0xFF0F => {
                     (if self.gpu.vblank_interrupt_flag {
                         0x01
@@ -396,8 +398,8 @@ impl MMU {
                 println!("Enable RAM: {}", self.ram_enabled);
             }
             // ROM bank selection
-            0x2000 => {
-                // TODO: Stop assuming MBC1
+            0x2000 | 0x3000 => {
+                // TODO: Stop assuming MBC3
                 let rom_bank_count = match self.rom[0x0148] {
                     0x00 => 2,
                     0x01 => 4,
@@ -410,7 +412,7 @@ impl MMU {
                     0x08 => 512,
                     _ => 0,
                 };
-                let mut bank = value & 0x1f;
+                let mut bank = value & 0x7f;
                 bank &= (rom_bank_count * 2 - 1) as u8;
                 if bank == 0 {
                     bank = 1;
@@ -419,7 +421,7 @@ impl MMU {
                 self.rom_bank = bank;
             }
             0x4000 | 0x5000 => {
-                // TODO: Stop assuming MBC1
+                // TODO: Stop assuming MBC1 or MBC3
                 let ram_bank = value & 0x03;
                 println!("Setting RAM bank 0x{:2x} to {:?}", address, ram_bank);
                 self.ram_bank = ram_bank;
