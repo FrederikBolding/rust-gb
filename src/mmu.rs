@@ -59,6 +59,7 @@ pub const ZERO_PAGE_SIZE: usize = ZERO_PAGE_END - ZERO_PAGE_START + 1;
 
 pub struct MMU {
     booting: bool,
+    pub bios_loaded: bool,
     pub gpu: GPU,
     pub timer: Timer,
     pub joypad: Joypad,
@@ -82,6 +83,7 @@ impl MMU {
     pub fn new() -> Self {
         Self {
             booting: true,
+            bios_loaded: false,
             gpu: GPU::new(),
             timer: Timer::new(),
             joypad: Joypad::new(),
@@ -115,6 +117,7 @@ impl MMU {
         for i in 0..BIOS_SIZE {
             self.bios[i] = bios[i];
         }
+        self.bios_loaded = true;
     }
 
     pub fn load_rom(&mut self, rom: Vec<u8>) {
@@ -132,7 +135,7 @@ impl MMU {
             0x03 => 4,
             0x04 => 16,
             0x05 => 8,
-            _ => 0
+            _ => 0,
         };
         // Allocate external RAM based on amount of banks
         self.external_ram = vec![0u8; EXTERNAL_RAM_SIZE * ram_banks];

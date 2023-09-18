@@ -7,3 +7,4 @@ edition = "2021"
 
 [dependencies]
 minifb = "0.23"
+rfd = "0.12.0"
