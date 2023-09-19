@@ -21,6 +21,8 @@ pub const BIOS_START: usize = 0x00;
 pub const BIOS_END: usize = 0xFF;
 pub const BIOS_SIZE: usize = BIOS_END - BIOS_START + 1;
 
+pub const BIOS_SIZE_COLOR: usize = 2304;
+
 pub const ROM_BANK_0_START: usize = 0x0000;
 pub const ROM_BANK_0_END: usize = 0x3FFF;
 
@@ -36,9 +38,17 @@ pub const EXTERNAL_RAM_START: usize = 0xA000;
 pub const EXTERNAL_RAM_END: usize = 0xBFFF;
 pub const EXTERNAL_RAM_SIZE: usize = EXTERNAL_RAM_END - EXTERNAL_RAM_START + 1;
 
-pub const WORKING_RAM_START: usize = 0xC000;
-pub const WORKING_RAM_END: usize = 0xDFFF;
-pub const WORKING_RAM_SIZE: usize = WORKING_RAM_END - WORKING_RAM_START + 1;
+pub const WORKING_RAM_BANK_0_START: usize = 0xC000;
+pub const WORKING_RAM_BANK_0_END: usize = 0xCFFF;
+pub const WORKING_RAM_BANK_0_SIZE: usize = WORKING_RAM_BANK_0_END - WORKING_RAM_BANK_0_START + 1;
+
+// In color this bank memory space supports banking
+pub const WORKING_RAM_BANK_N_START: usize = 0xD000;
+pub const WORKING_RAM_BANK_N_END: usize = 0xDFFF;
+pub const WORKING_RAM_BANK_N_SIZE: usize = WORKING_RAM_BANK_N_END - WORKING_RAM_BANK_N_START + 1;
+
+// The total size is inflated so we can keep all possible ram banks in one array
+pub const WORKING_RAM_TOTAL_SIZE: usize = (WORKING_RAM_BANK_0_SIZE + WORKING_RAM_BANK_N_SIZE) * 4;
 
 pub const SHADOW_WORKING_RAM_START: usize = 0xE000;
 pub const SHADOW_WORKING_RAM_END: usize = 0xFDFF;
@@ -57,19 +67,26 @@ pub const ZERO_PAGE_START: usize = 0xFF80;
 pub const ZERO_PAGE_END: usize = 0xFFFE;
 pub const ZERO_PAGE_SIZE: usize = ZERO_PAGE_END - ZERO_PAGE_START + 1;
 
+#[derive(PartialEq)]
+pub enum GBMode {
+    Original,
+    Color,
+}
+
 pub struct MMU {
     booting: bool,
     pub bios_loaded: bool,
     pub gpu: GPU,
     pub timer: Timer,
     pub joypad: Joypad,
-    bios: [u8; BIOS_SIZE],
+    mode: GBMode,
+    bios: Vec<u8>,
     rom: Vec<u8>,
     external_ram: Vec<u8>,
-    working_ram: [u8; WORKING_RAM_SIZE],
+    working_ram: [u8; WORKING_RAM_TOTAL_SIZE],
     zero_page_ram: [u8; ZERO_PAGE_SIZE],
     rom_bank: u8,
-    ram_bank: u8,
+    external_ram_bank: u8,
     ram_enabled: bool,
     // Interrupts
     pub vblank_interrupt_enabled: bool,
@@ -77,6 +94,10 @@ pub struct MMU {
     pub timer_interrupt_enabled: bool,
     pub serial_interrupt_enabled: bool, // TODO
     pub joypad_interrupt_enabled: bool,
+
+    // Color
+    vram_bank: u8,
+    ram_bank: u8,
 }
 
 impl MMU {
@@ -87,19 +108,22 @@ impl MMU {
             gpu: GPU::new(),
             timer: Timer::new(),
             joypad: Joypad::new(),
-            bios: [0; BIOS_SIZE],
+            mode: GBMode::Color,
+            bios: vec![0; 0],
             rom: vec![0; 0],
             external_ram: vec![0; 0],
-            working_ram: [0; WORKING_RAM_SIZE],
+            working_ram: [0; WORKING_RAM_TOTAL_SIZE],
             zero_page_ram: [0; ZERO_PAGE_SIZE],
             rom_bank: 1,
-            ram_bank: 0,
+            external_ram_bank: 0,
             ram_enabled: false,
             vblank_interrupt_enabled: false,
             lcdstat_interrupt_enabled: false,
             timer_interrupt_enabled: false,
             serial_interrupt_enabled: false,
             joypad_interrupt_enabled: false,
+            vram_bank: 0,
+            ram_bank: 0,
         }
     }
 
@@ -114,9 +138,14 @@ impl MMU {
 
     pub fn load_bios(&mut self, bios: Vec<u8>) {
         println!("Loading BIOS...");
-        for i in 0..BIOS_SIZE {
-            self.bios[i] = bios[i];
+        let max_bios_size = match self.mode {
+            GBMode::Original => BIOS_SIZE,
+            GBMode::Color => BIOS_SIZE_COLOR,
+        };
+        if bios.len() > max_bios_size {
+            panic!("BIOS is too large {}", bios.len());
         }
+        self.bios = bios;
         self.bios_loaded = true;
     }
 
@@ -145,25 +174,31 @@ impl MMU {
         let address = address as usize;
         //println!("Read 0x{:02x}", address);
         match address {
-            BIOS_START..=BIOS_END => {
+            BIOS_START..=ROM_BANK_0_END => {
                 if self.booting {
                     self.bios[address]
                 } else {
                     self.rom[address]
                 }
             }
-            ROM_BANK_0_START..=ROM_BANK_0_END => self.rom[address],
             ROM_BANK_N_START..=ROM_BANK_N_END => {
                 let offset = ROM_BANK_N_SIZE * self.rom_bank as usize;
                 self.rom[offset + address - ROM_BANK_N_START]
             }
-            VRAM_START..=VRAM_END => self.gpu.vram[address - VRAM_START],
+            VRAM_START..=VRAM_END => {
+                let offset = VRAM_SIZE * self.vram_bank as usize;
+                self.gpu.vram[offset + address - VRAM_START]
+            }
             OAM_START..=OAM_END => self.gpu.oam[address - OAM_START],
             EXTERNAL_RAM_START..=EXTERNAL_RAM_END => {
-                let offset = EXTERNAL_RAM_SIZE * self.ram_bank as usize;
+                let offset = EXTERNAL_RAM_SIZE * self.external_ram_bank as usize;
                 self.external_ram[offset + address - EXTERNAL_RAM_START]
             }
-            WORKING_RAM_START..=WORKING_RAM_END => self.working_ram[address - WORKING_RAM_START],
+            WORKING_RAM_BANK_0_START..=WORKING_RAM_BANK_0_END => self.working_ram[address - WORKING_RAM_BANK_0_START],
+            WORKING_RAM_BANK_N_START..=WORKING_RAM_BANK_N_END => {
+                let offset = WORKING_RAM_BANK_N_SIZE * self.ram_bank as usize;
+                self.working_ram[offset + address - WORKING_RAM_BANK_N_START]
+            }
             SHADOW_WORKING_RAM_START..=SHADOW_WORKING_RAM_END => {
                 self.working_ram[address - SHADOW_WORKING_RAM_START]
             }
@@ -275,7 +310,8 @@ impl MMU {
                 self.write_rom(address as u16, value);
             }
             VRAM_START..=VRAM_END => {
-                self.gpu.write_vram(address - VRAM_START, value);
+                let offset = VRAM_SIZE * self.vram_bank as usize;
+                self.gpu.write_vram(offset + address - VRAM_START, value);
             }
             OAM_START..=OAM_END => {
                 self.gpu.write_oam(address - OAM_START, value);
@@ -284,11 +320,15 @@ impl MMU {
                 if !self.ram_enabled {
                     return;
                 }
-                let offset = EXTERNAL_RAM_SIZE * self.ram_bank as usize;
+                let offset = EXTERNAL_RAM_SIZE * self.external_ram_bank as usize;
                 self.external_ram[offset + address - EXTERNAL_RAM_START] = value;
             }
-            WORKING_RAM_START..=WORKING_RAM_END => {
-                self.working_ram[address - WORKING_RAM_START] = value
+            WORKING_RAM_BANK_0_START..=WORKING_RAM_BANK_0_END => {
+                self.working_ram[address - WORKING_RAM_BANK_0_START] = value
+            }
+            WORKING_RAM_BANK_N_START..=WORKING_RAM_BANK_N_END => {
+                let offset = WORKING_RAM_BANK_N_SIZE * self.ram_bank as usize;
+                self.working_ram[offset + address - WORKING_RAM_BANK_N_START] = value
             }
             SHADOW_WORKING_RAM_START..=SHADOW_WORKING_RAM_END => {
                 self.working_ram[address - SHADOW_WORKING_RAM_START] = value
@@ -364,10 +404,19 @@ impl MMU {
                     }
                     0xFF4A => self.gpu.window_y = value,
                     0xFF4B => self.gpu.window_x = value,
+                    0xFF4F => self.vram_bank = value & 0x01,
                     0xFF47 => self.gpu.background_palette = value,
                     0xFF48 => self.gpu.objects_palette_0 = value,
                     0xFF49 => self.gpu.objects_palette_1 = value,
                     0xFF50 => self.finish_boot(),
+                    0xFF70 => {
+                        let mut ram_bank = value & 0x07;
+                        if ram_bank == 0 {
+                            ram_bank = 1;
+                        }
+                        println!("Setting RAM bank 0x{:2x} to {:?}", address, ram_bank);
+                        self.ram_bank = ram_bank;
+                    }
                     _ => println!(
                         "Wrote to unimplemented IO register 0x{:02x} 0x{:02x}",
                         address, value
@@ -426,8 +475,8 @@ impl MMU {
             0x4000 | 0x5000 => {
                 // TODO: Stop assuming MBC1 or MBC3
                 let ram_bank = value & 0x03;
-                println!("Setting RAM bank 0x{:2x} to {:?}", address, ram_bank);
-                self.ram_bank = ram_bank;
+                println!("Setting external RAM bank 0x{:2x} to {:?}", address, ram_bank);
+                self.external_ram_bank = ram_bank;
             }
             _ => println!(
                 "Writing to unimplemented rom location 0x{:2x} 0x{:2x}",
